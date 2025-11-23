@@ -7,37 +7,42 @@
 
 ### Использование
 
+**Option 1: Programmatic scroll (with or without animation)**
 ```swift
 import ExyteChat
 
-// В вашем View
-struct ConversationView: View {
-    @State private var messages: [Message] = []
-
-    var body: some View {
-        ChatView(messages: messages, /* ... другие параметры ... */)
-            .onAppear {
-                // Прокрутить к сообщению с определенным ID
-                scrollToMessage(messageId: "message-123", animated: true)
-            }
-    }
-
-    func scrollToMessage(messageId: String, animated: Bool = true) {
-        // Вызов метода для скролла
-        NotificationCenter.default.post(
-            name: .onScrollToMessage,
-            object: messageId
-        )
-    }
-}
-```
-
-### Альтернативный способ (используя публичный API)
-
-```swift
-// ChatView предоставляет удобный метод
 ChatView(messages: messages, /* ... */)
     .scrollToMessage(messageId: "message-123", animated: true)
+```
+
+**Option 2: Automatic scroll on chat open (WITHOUT animation)**
+```swift
+ChatView(messages: messages, /* ... */)
+    .scrollToMessageOnAppear(firstUnreadMessageId)
+```
+
+This is perfect for scrolling to the first unread message when opening a chat. The scroll happens instantly without animation.
+
+### Full Example
+
+```swift
+struct ConversationView: View {
+    @StateObject private var viewModel = ChatViewModel()
+
+    var body: some View {
+        ChatView(
+            messages: viewModel.messages,
+            chatType: .conversation,
+            didSendMessage: viewModel.sendMessage
+        )
+        // Automatically scroll to first unread on open
+        .scrollToMessageOnAppear(viewModel.firstUnreadMessageId)
+        // Track read messages
+        .enableMessageReadTracking { messageId in
+            viewModel.markAsRead(messageId)
+        }
+    }
+}
 ```
 
 ---

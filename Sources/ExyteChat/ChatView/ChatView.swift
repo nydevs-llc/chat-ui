@@ -134,6 +134,7 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
     var messageFont = UIFontMetrics.default.scaledFont(for: UIFont.systemFont(ofSize: 15))
     var availablelInput: AvailableInputType = .full
     var messageReadTracker: MessageReadTracker?
+    var scrollToMessageOnAppear: String? = nil
 
     @StateObject private var viewModel = ChatViewModel()
     @StateObject private var inputViewModel = InputViewModel()
@@ -143,6 +144,7 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
 
     @State private var isScrolledToBottom: Bool = true
     @State private var shouldScrollToTop: () -> () = {}
+    @State private var hasPerformedInitialScroll: Bool = false
 
     @State private var isShowingMenu = false
     @State private var tableContentHeight: CGFloat = 0
@@ -408,7 +410,8 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
             messageUseMarkdown: messageUseMarkdown,
             showAvatars: showAvatars,
             groupUsers: groupUsers,
-            readTracker: messageReadTracker
+            readTracker: messageReadTracker,
+            scrollToMessageOnAppear: scrollToMessageOnAppear
 //            listSwipeActions: listSwipeActions
         )
         .applyIf(!isScrollEnabled) {
@@ -790,6 +793,24 @@ public extension ChatView {
         )
         tracker.enable(callback: onMessageRead)
         view.messageReadTracker = tracker
+        return view
+    }
+
+    /// Scrolls to a specific message when the chat view appears (without animation)
+    /// - Parameter messageId: The ID of the message to scroll to on appear
+    /// - Returns: Modified ChatView that will scroll to the specified message on appear
+    ///
+    /// Useful for scrolling to the first unread message when opening a chat.
+    /// The scroll happens without animation for instant positioning.
+    ///
+    /// Example:
+    /// ```swift
+    /// ChatView(messages: messages, ...)
+    ///     .scrollToMessageOnAppear(firstUnreadMessageId)
+    /// ```
+    func scrollToMessageOnAppear(_ messageId: String?) -> ChatView {
+        var view = self
+        view.scrollToMessageOnAppear = messageId
         return view
     }
 }

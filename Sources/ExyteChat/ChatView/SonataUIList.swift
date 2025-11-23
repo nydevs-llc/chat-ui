@@ -55,6 +55,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
     let showAvatars: Bool
     let groupUsers: [User]
     var readTracker: MessageReadTracker?
+    var scrollToMessageOnAppear: String?
 
     func makeUIView(context: Context) -> UICollectionView {
         let layout = UIListLayout.makeLayout(
@@ -126,7 +127,8 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
             mainHeaderBuilder: mainHeaderBuilder,
             headerBuilder: headerBuilder,
             showDateHeaders: showDateHeaders,
-            readTracker: readTracker
+            readTracker: readTracker,
+            scrollToMessageOnAppear: scrollToMessageOnAppear
         )
     }
 
@@ -144,11 +146,13 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
         private let headerBuilder: ((Date) -> AnyView)?
         private let showDateHeaders: Bool
         private var readTracker: MessageReadTracker?
+        private let scrollToMessageOnAppear: String?
 
         private var sectionIndexByID: [SectionID: Int] = [:]
         private var rowIndexByItemID: [ItemID: (s: Int, r: Int)] = [:]
         private var lastSections: [MessagesSection] = []
         private var paginationTargetItemID: ItemID?
+        private var hasPerformedInitialScroll = false
 
         private var invertT: CGAffineTransform {
             outer.type == .conversation ? CGAffineTransform(scaleX: 1, y: -1) : .identity
@@ -159,13 +163,15 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
             mainHeaderBuilder: (() -> AnyView)?,
             headerBuilder: ((Date) -> AnyView)?,
             showDateHeaders: Bool,
-            readTracker: MessageReadTracker?
+            readTracker: MessageReadTracker?,
+            scrollToMessageOnAppear: String?
         ) {
             self.outer = outer
             self.mainHeaderBuilder = mainHeaderBuilder
             self.headerBuilder = headerBuilder
             self.showDateHeaders = showDateHeaders
             self.readTracker = readTracker
+            self.scrollToMessageOnAppear = scrollToMessageOnAppear
         }
 
         func attach(to cv: UICollectionView) {
@@ -316,6 +322,15 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
             let stayPinned = isAtBottom()
             dataSource.apply(snapshot, animatingDifferences: stayPinned)
             if stayPinned { scrollToBottom(animated: true) }
+
+            // Perform initial scroll to unread message if specified
+            if !hasPerformedInitialScroll, let messageId = scrollToMessageOnAppear {
+                hasPerformedInitialScroll = true
+                // Delay to ensure layout is complete
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                    self?.scrollToMessage(messageId: messageId, animated: false)
+                }
+            }
         }
 
         private func configureLongPress(on cv: UICollectionView) {
