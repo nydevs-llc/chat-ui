@@ -9,6 +9,7 @@ import SwiftUI
 
 public extension Notification.Name {
     static let onScrollToBottom = Notification.Name("onScrollToBottom")
+    static let onScrollToMessage = Notification.Name("onScrollToMessage")
     static let audioPlaybackStarted = Notification.Name("audioPlaybackStarted")
     static let recordingStarted = Notification.Name("recordingStarted")
     static let recordingStopped = Notification.Name("recordingStopped")
@@ -53,6 +54,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
     let messageUseMarkdown: Bool
     let showAvatars: Bool
     let groupUsers: [User]
+    var readTracker: MessageReadTracker?
 
     func makeUIView(context: Context) -> UICollectionView {
         let layout = UIListLayout.makeLayout(
@@ -90,6 +92,12 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
             context.coordinator.scrollToBottom(animated: true)
         }
 
+        NotificationCenter.default.addObserver(forName: .onScrollToMessage, object: nil, queue: .main) { notification in
+            if let messageId = notification.object as? String {
+                context.coordinator.scrollToMessage(messageId: messageId, animated: true)
+            }
+        }
+
         DispatchQueue.main.async {
             shouldScrollToTop = { [weak cv] in
                 guard let cv else { return }
@@ -117,7 +125,8 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
             outer: self,
             mainHeaderBuilder: mainHeaderBuilder,
             headerBuilder: headerBuilder,
-            showDateHeaders: showDateHeaders
+            showDateHeaders: showDateHeaders,
+            readTracker: readTracker
         )
     }
 
@@ -134,6 +143,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
         private let mainHeaderBuilder: (() -> AnyView)?
         private let headerBuilder: ((Date) -> AnyView)?
         private let showDateHeaders: Bool
+        private var readTracker: MessageReadTracker?
 
         private var sectionIndexByID: [SectionID: Int] = [:]
         private var rowIndexByItemID: [ItemID: (s: Int, r: Int)] = [:]
@@ -148,12 +158,14 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
             outer: SonataUIList,
             mainHeaderBuilder: (() -> AnyView)?,
             headerBuilder: ((Date) -> AnyView)?,
-            showDateHeaders: Bool
+            showDateHeaders: Bool,
+            readTracker: MessageReadTracker?
         ) {
             self.outer = outer
             self.mainHeaderBuilder = mainHeaderBuilder
             self.headerBuilder = headerBuilder
             self.showDateHeaders = showDateHeaders
+            self.readTracker = readTracker
         }
 
         func attach(to cv: UICollectionView) {
@@ -367,7 +379,17 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
                 cv.setContentOffset(CGPoint(x: 0, y: maxY), animated: animated)
             }
         }
-        
+
+        func scrollToMessage(messageId: String, animated: Bool) {
+            guard let cv = collectionView else { return }
+            let itemID = ItemID(raw: messageId)
+
+            guard let coords = rowIndexByItemID[itemID] else { return }
+            let indexPath = IndexPath(item: coords.r, section: coords.s)
+
+            cv.scrollToItem(at: indexPath, at: .centeredVertically, animated: animated)
+        }
+
         func isAtBottom() -> Bool {
             guard let cv = collectionView else { return false }
             if outer.type == .conversation {
@@ -381,17 +403,38 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
         func collectionView(_ collectionView: UICollectionView,
                             willDisplay cell: UICollectionViewCell,
                             forItemAt indexPath: IndexPath) {
-            guard outer.type == .conversation else { return }
-            guard let paginationHandler = outer.paginationHandler else { return }
-            guard let targetID = paginationTargetItemID else { return }
             guard let itemID = dataSource.itemIdentifier(for: indexPath),
-                  itemID == targetID else { return }
+                  let coords = rowIndexByItemID[itemID] else { return }
 
-            guard let coords = rowIndexByItemID[itemID] else { return }
             let row = lastSections[coords.s].rows[coords.r]
 
-            Task {
-                await paginationHandler.handleClosure(row.message)
+            // Pagination handling
+            if outer.type == .conversation,
+               let paginationHandler = outer.paginationHandler,
+               let targetID = paginationTargetItemID,
+               itemID == targetID {
+                Task {
+                    await paginationHandler.handleClosure(row.message)
+                }
+            }
+
+            // Read tracking
+            if let readTracker = readTracker, !row.message.user.isCurrentUser {
+                readTracker.messageDidAppear(messageId: row.message.id, createdAt: row.message.createdAt)
+            }
+        }
+
+        func collectionView(_ collectionView: UICollectionView,
+                            didEndDisplaying cell: UICollectionViewCell,
+                            forItemAt indexPath: IndexPath) {
+            guard let itemID = dataSource.itemIdentifier(for: indexPath),
+                  let coords = rowIndexByItemID[itemID] else { return }
+
+            let row = lastSections[coords.s].rows[coords.r]
+
+            // Read tracking
+            if let readTracker = readTracker {
+                readTracker.messageDidDisappear(messageId: row.message.id)
             }
         }
 

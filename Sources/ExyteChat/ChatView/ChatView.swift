@@ -133,6 +133,7 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
     var showMessageTimeView = true
     var messageFont = UIFontMetrics.default.scaledFont(for: UIFont.systemFont(ofSize: 15))
     var availablelInput: AvailableInputType = .full
+    var messageReadTracker: MessageReadTracker?
 
     @StateObject private var viewModel = ChatViewModel()
     @StateObject private var inputViewModel = InputViewModel()
@@ -406,7 +407,8 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
             ids: ids,
             messageUseMarkdown: messageUseMarkdown,
             showAvatars: showAvatars,
-            groupUsers: groupUsers
+            groupUsers: groupUsers,
+            readTracker: messageReadTracker
 //            listSwipeActions: listSwipeActions
         )
         .applyIf(!isScrollEnabled) {
@@ -760,6 +762,34 @@ public extension ChatView {
             allowEmojiSearch: allowEmojiSearchFor,
             shouldShowOverview: shouldShowOverviewFor
         )
+        return view
+    }
+
+    /// Scrolls to a specific message by its ID
+    /// - Parameter messageId: The ID of the message to scroll to
+    /// - Parameter animated: Whether the scroll should be animated (default: true)
+    func scrollToMessage(messageId: String, animated: Bool = true) {
+        NotificationCenter.default.post(name: .onScrollToMessage, object: messageId)
+    }
+
+    /// Enables message read tracking with a callback
+    /// - Parameters:
+    ///   - debounceInterval: Time interval for debouncing updates (default: 1.0 second)
+    ///   - minimumVisibilityDuration: Minimum time a message must be visible to be considered read (default: 0.5 seconds)
+    ///   - onMessageRead: Callback called with the ID of the maximum visible message
+    /// - Returns: Modified ChatView with read tracking enabled
+    func enableMessageReadTracking(
+        debounceInterval: TimeInterval = 1.0,
+        minimumVisibilityDuration: TimeInterval = 0.5,
+        onMessageRead: @escaping (String) -> Void
+    ) -> ChatView {
+        var view = self
+        let tracker = MessageReadTracker(
+            debounceInterval: debounceInterval,
+            minimumVisibilityDuration: minimumVisibilityDuration
+        )
+        tracker.enable(callback: onMessageRead)
+        view.messageReadTracker = tracker
         return view
     }
 }
