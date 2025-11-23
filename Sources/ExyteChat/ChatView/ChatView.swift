@@ -144,7 +144,6 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
 
     @State private var isScrolledToBottom: Bool = true
     @State private var shouldScrollToTop: () -> () = {}
-    @State private var hasPerformedInitialScroll: Bool = false
 
     @State private var isShowingMenu = false
     @State private var tableContentHeight: CGFloat = 0

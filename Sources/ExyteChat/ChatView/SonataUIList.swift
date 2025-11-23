@@ -320,17 +320,17 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
             }
 
             let stayPinned = isAtBottom()
-            dataSource.apply(snapshot, animatingDifferences: stayPinned)
-            if stayPinned { scrollToBottom(animated: true) }
-
-            // Perform initial scroll to unread message if specified
-            if !hasPerformedInitialScroll, let messageId = scrollToMessageOnAppear {
-                hasPerformedInitialScroll = true
-                // Delay to ensure layout is complete
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                    self?.scrollToMessage(messageId: messageId, animated: false)
+            dataSource.apply(snapshot, animatingDifferences: stayPinned) {
+                // Perform initial scroll to unread message after layout completes
+                if !self.hasPerformedInitialScroll, let messageId = self.scrollToMessageOnAppear {
+                    self.hasPerformedInitialScroll = true
+                    // Small delay to ensure all animations and layout updates are complete
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                        self?.scrollToMessage(messageId: messageId, animated: false)
+                    }
                 }
             }
+            if stayPinned { scrollToBottom(animated: true) }
         }
 
         private func configureLongPress(on cv: UICollectionView) {
@@ -399,8 +399,19 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
             guard let cv = collectionView else { return }
             let itemID = ItemID(raw: messageId)
 
-            guard let coords = rowIndexByItemID[itemID] else { return }
+            guard let coords = rowIndexByItemID[itemID] else {
+                print("[⚠️ Chat] Message not found for scroll: \(messageId)")
+                return
+            }
+
             let indexPath = IndexPath(item: coords.r, section: coords.s)
+
+            // Verify the indexPath is valid before scrolling
+            guard coords.s < lastSections.count,
+                  coords.r < lastSections[coords.s].rows.count else {
+                print("[⚠️ Chat] Invalid indexPath for message: \(messageId)")
+                return
+            }
 
             cv.scrollToItem(at: indexPath, at: .centeredVertically, animated: animated)
         }
@@ -442,8 +453,13 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
         func collectionView(_ collectionView: UICollectionView,
                             didEndDisplaying cell: UICollectionViewCell,
                             forItemAt indexPath: IndexPath) {
+            // Note: itemIdentifier may return nil for items that were removed
             guard let itemID = dataSource.itemIdentifier(for: indexPath),
-                  let coords = rowIndexByItemID[itemID] else { return }
+                  let coords = rowIndexByItemID[itemID],
+                  coords.s < lastSections.count,
+                  coords.r < lastSections[coords.s].rows.count else {
+                return
+            }
 
             let row = lastSections[coords.s].rows[coords.r]
 

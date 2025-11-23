@@ -98,9 +98,7 @@ public final class MessageReadTracker: ObservableObject {
         debounceTimer?.invalidate()
 
         debounceTimer = Timer.scheduledTimer(withTimeInterval: debounceInterval, repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                self?.processVisibleMessages()
-            }
+            self?.processVisibleMessages()
         }
     }
 
