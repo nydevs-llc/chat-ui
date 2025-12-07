@@ -15,9 +15,9 @@ public enum InputViewStyle {
     var placeholder: String {
         switch self {
         case .message:
-            return "Повідомлення..."
+            return "Сообщение"
         case .signature:
-            return "Add signature..."
+            return ""
         }
     }
 }
@@ -204,7 +204,7 @@ struct InputView: View {
                 }
             }
         }
-        .frame(minHeight: 48)
+        .frame(minHeight: 40)
     }
 
     @ViewBuilder
@@ -225,7 +225,7 @@ struct InputView: View {
                 Color.clear.frame(width: 8, height: 1)
             }
         }
-        .frame(minHeight: 48)
+        .frame(minHeight: 40)
     }
 
     @ViewBuilder
@@ -261,7 +261,7 @@ struct InputView: View {
     var rightOutsideButton: some View {
         if state == .editing {
             editingButtons
-                .frame(height: 48)
+                .frame(height: 40)
         }
         else {
             ZStack {
@@ -280,7 +280,7 @@ struct InputView: View {
                                 .highPriorityGesture(dragGesture())
                         } else {
                             EmptyView()
-                                .viewSize(48)
+                                .viewSize(40)
                         }
                     }
                 }
@@ -298,7 +298,7 @@ struct InputView: View {
                     .offset(y: (state == .isRecordingTap ? -28 : -overlaySize.height) - 24)
                 }
             }
-            .viewSize(48)
+            .viewSize(40)
         }
     }
 
@@ -402,7 +402,7 @@ struct InputView: View {
             onAction(.send)
         } label: {
             theme.images.inputView.arrowSend
-                .viewSize(48)
+                .viewSize(40)
                 .circleBackground(theme.colors.sendButtonBackground)
         }
     }
@@ -411,7 +411,7 @@ struct InputView: View {
         theme.images.inputView.microphone
             .renderingMode(.template)
             .foregroundColor(theme.colors.buttonBackground)
-            .viewSize(48)
+            .viewSize(40)
             .circleBackground(theme.colors.inputLightContextBackground)
             .frameGetter($recordButtonFrame)
     }

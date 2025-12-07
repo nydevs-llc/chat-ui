@@ -55,7 +55,7 @@ public struct MessageStatusView: View {
                         .foregroundColor(resolvedColor)
                         .viewSize(MessageView.statusViewSize)
                         
-                    Text("Повторити")
+                    Text("Повторить")
                         .foregroundColor(statusColor)
                         .font(.system(size: 13))
                         .fontWeight(.medium)

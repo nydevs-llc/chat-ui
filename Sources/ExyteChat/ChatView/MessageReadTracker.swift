@@ -86,7 +86,9 @@ public final class MessageReadTracker: ObservableObject {
     public func messageDidDisappear(messageId: String) {
         guard isEnabled else { return }
 
-        visibleMessages.removeAll { $0.id == messageId }
+        if let message = visibleMessages.first(where: { $0.id == messageId }) {
+            visibleMessages.remove(message)
+        }
         visibilityTimestamps.removeValue(forKey: messageId)
         pendingMessages.remove(messageId)
 

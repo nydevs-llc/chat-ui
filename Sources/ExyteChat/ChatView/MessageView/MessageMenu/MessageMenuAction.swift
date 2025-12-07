@@ -41,9 +41,9 @@ public enum DefaultMessageMenuAction: MessageMenuAction {
     public func icon() -> Image {
         switch self {
         case .reply:
-            Image(.reply)
+            Image("")
         case .edit:
-            Image(.edit)
+            Image("")
         }
     }
     
