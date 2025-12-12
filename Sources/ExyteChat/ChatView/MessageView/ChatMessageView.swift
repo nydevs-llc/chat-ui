@@ -49,14 +49,14 @@ struct ChatMessageView<MessageContent: View>: View {
                     groupUsers: groupUsers,
                     font: messageFont
                 )
-                .applyIf(shouldEnableReplyGesture(for: row.message)) {
-                    $0.onReplyGesture(replySymbolColor: theme.colors.myMessage) {
-                        viewModel.messageMenuActionInternal(
-                            message: row.message,
-                            action: DefaultMessageMenuAction.reply
-                        )
-                    }
-                }
+                // .applyIf(shouldEnableReplyGesture(for: row.message)) {
+                //     $0.onReplyGesture(replySymbolColor: theme.colors.myMessage) {
+                //         viewModel.messageMenuActionInternal(
+                //             message: row.message,
+                //             action: DefaultMessageMenuAction.reply
+                //         )
+                //     }
+                // }
                 
             case .call, .status:
                 if let messageBuilder {

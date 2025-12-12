@@ -447,12 +447,12 @@ extension MessageView {
                 .sizeGetter($statusSize)
             }
 
-            MessageTimeText(
-                text: message.time,
-                isCurrentUser: message.user.isCurrentUser,
-                theme: theme, needsCapsule: needsCapsule
-            )
-            .alignmentGuide(.lastTextBaseline) { d in d[.lastTextBaseline] }
+            // MessageTimeText(
+            //     text: message.time,
+            //     isCurrentUser: message.user.isCurrentUser,
+            //     theme: theme, needsCapsule: needsCapsule
+            // )
+            // .alignmentGuide(.lastTextBaseline) { d in d[.lastTextBaseline] }
         }
 
         if needsCapsule {
