@@ -336,9 +336,42 @@ public extension View {
             .foregroundColor(message.user.isCurrentUser ? (isReply ? theme.colors.textMyReply : theme.colors.textDarkContext) : theme.colors.textLightContext)
             .background {
                 if isReply || !message.text.isEmpty || message.recording != nil {
-                    RoundedRectangle(cornerRadius: radius)
-                        .foregroundColor(message.user.isCurrentUser ? theme.colors.myMessage : theme.colors.friendMessage)
-                        .opacity(isReply ? 0.5 : 1)
+                    if message.user.isCurrentUser && !isReply {
+                        ZStack {
+                            // Base color
+                            RoundedRectangle(cornerRadius: radius)
+                                .foregroundColor(theme.colors.myMessage)
+                            // Gradient from left
+                            RoundedRectangle(cornerRadius: radius)
+                                .fill(
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [
+                                            Color(red: 0.44, green: 0.31, blue: 0.98),
+                                            Color(red: 0.44, green: 0.31, blue: 0.98).opacity(0)
+                                        ]),
+                                        startPoint: .bottom,
+                                        endPoint: .top
+                                    )
+                                )
+                            
+                            // Gradient from right
+                            RoundedRectangle(cornerRadius: radius)
+                                .fill(
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [
+                                            Color(red: 0.39, green: 0.36, blue: 1),
+                                            Color(red: 0.44, green: 0.31, blue: 0.98).opacity(0)
+                                        ]),
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                        }
+                    } else {
+                        RoundedRectangle(cornerRadius: radius)
+                            .foregroundColor(message.user.isCurrentUser ? theme.colors.myMessage : theme.colors.friendMessage)
+                            .opacity(isReply ? 0.5 : 1)
+                    }
                 }
             }
             .cornerRadius(radius)
@@ -438,11 +471,21 @@ extension MessageView {
     private func timeWithOptionalStatus(needsCapsule: Bool, spacing: CGFloat) -> some View {
         let content = HStack(spacing: spacing) {
             if message.user.isCurrentUser, let status = message.status {
-                MessageStatusView(status: status, needsCapsule: needsCapsule) {
-                    if case let .error(draft) = status {
-                        viewModel.sendMessage(draft)
+                MessageStatusView(
+                    status: status,
+                    needsCapsule: needsCapsule,
+                    colorSet: MessageStatusColorSet(
+                        sending: theme.colors.myMessageTime,
+                        sent: theme.colors.myMessageTime,
+                        received: theme.colors.myMessageTime,
+                        read: theme.colors.myMessageTime
+                    ),
+                    onRetry: {
+                        if case let .error(draft) = status {
+                            viewModel.sendMessage(draft)
+                        }
                     }
-                }
+                )
                 .alignmentGuide(.lastTextBaseline) { d in d[.bottom] }
                 .sizeGetter($statusSize)
             }

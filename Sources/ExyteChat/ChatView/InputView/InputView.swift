@@ -404,6 +404,7 @@ struct InputView: View {
             theme.images.inputView.arrowSend
                 .viewSize(40)
                 .circleBackground(theme.colors.sendButtonBackground)
+                .opacity(state.canSend ? 1.0 : 0.4)
         }
     }
 
