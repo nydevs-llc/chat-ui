@@ -29,7 +29,7 @@ struct PinchZoomContext<Content: View>: View {
             }
             .scaleEffect(1 + (scale < 0 ? 0 : scale), anchor: .init(x: scalePosition.x, y: scalePosition.y))
             .zIndex(scale != 0 ? 1000 : 0)
-            .onChange(of: scale) { _, newValue in
+            .onChange(of: scale) { newValue in
                 guard scale == -1 else { return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                     scale = 0

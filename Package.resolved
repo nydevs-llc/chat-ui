@@ -1,30 +1,12 @@
 {
   "pins" : [
     {
-      "identity" : "anchoredpopup",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/exyte/AnchoredPopup.git",
-      "state" : {
-        "revision" : "d7478c34e761725ff06ad74e44e675d0d56a4150",
-        "version" : "1.0.7"
-      }
-    },
-    {
       "identity" : "floatingbutton",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/exyte/FloatingButton",
       "state" : {
         "revision" : "c1e3e6a641ef5bacbcbc2b2c80db54793f75f974",
         "version" : "1.4.0"
-      }
-    },
-    {
-      "identity" : "mediapicker",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/exyte/MediaPicker.git",
-      "state" : {
-        "revision" : "fd71c0b560aa79eee1b87f73ce93fac5576a01df",
-        "version" : "3.2.4"
       }
     }
   ],

@@ -6,7 +6,8 @@
 //
 
 import SwiftUI
-import ExyteMediaPicker
+// todo: вернуть, если надо будет
+//import ExyteMediaPicker
 //import ActivityIndicatorView
 import AVFoundation
 
@@ -66,7 +67,7 @@ struct AttachmentsEditor<InputViewContent: View>: View {
             stopRecordingTimer()
             cancelPendingSwitches()
         }
-        .onChange(of: cameraMode) { _, newMode in
+        .onChange(of: cameraMode) { newMode in
             // Stop the timer when returning to photo mode
             if newMode == .photo, isRecording { stopRecordingTimer() }
         }
@@ -169,206 +170,207 @@ struct AttachmentsEditor<InputViewContent: View>: View {
     // MARK: - MediaPicker (UI unchanged; only the live preview visibility is controlled)
 
     var mediaPicker: some View {
-        GeometryReader { g in
-            MediaPicker(isPresented: $inputViewModel.showPicker) {
-                seleсtedMedias = $0
-                assembleSelectedMedia()
-            } albumSelectionBuilder: { _, albumSelectionView, _ in
-                ZStack {
-                    VStack(spacing: 0) {
-                        albumSelectionHeaderView
-                            .padding(.top, g.safeAreaInsets.top > 0 ? g.safeAreaInsets.top : 20)
-                            .padding(.bottom, 8)
-                        albumSelectionView
-                        Spacer()
-                        inputView
-                            .padding(.bottom, g.safeAreaInsets.bottom > 0 ? g.safeAreaInsets.bottom : 20)
-                    }
-                    .background(pickerTheme.main.pickerBackground)
-                }
-                .ignoresSafeArea()
-            } cameraSelectionBuilder: { _, cancelClosure, cameraSelectionView in
-                ZStack {
-                    VStack(spacing: 0) {
-                        headerCloseOnly(
-                            topInset: g.safeAreaInsets.top > 0 ? g.safeAreaInsets.top : 20,
-                            title: chatTitle,
-                            onClose: {
-                                cancelClosure()
-                                cancelPendingSwitches()
-                                stopRecordingTimer()
-                            }
-                        )
-
-                        cameraSelectionView
-
-                        cameraBottomControls(
-                            safeBottomInset: g.safeAreaInsets.bottom,
-                            onShowPreview: nil
-                        )
-                    }
-                }
-                .ignoresSafeArea()
-            } cameraViewBuilder: { liveCamera, cancel, showPreview, takePhoto, startRecord, stopRecord, toggleFlash, switchCamera in
-                GeometryReader { geometry in
-                    ZStack {
-                        // Keep the layout identical; only control live feed visibility during switching.
-                        Group {
-                            if liveFeedReady {
-                                liveCamera
-                            } else {
-                                // Placeholder while switching; same footprint to avoid layout jumps.
-                                Color.black
-                            }
-                        }
-                        .ignoresSafeArea()
-
-                        // TOP CONTROLS
-                        VStack {
-                            HStack {
-                                Button(action: {
-                                    cancel()
-                                    cancelPendingSwitches()
-                                    stopRecordingTimer()
-                                }) {
-                                    Image(systemName: "xmark")
-                                        .font(.title2)
-                                        .foregroundColor(.white)
-                                        .padding(12)
-                                        .background(Circle().fill(Color.black.opacity(0.6)))
-                                }
-                                .padding(.leading, 16)
-                                .padding(.top, geometry.safeAreaInsets.top > 0 ? geometry.safeAreaInsets.top + 32 : 48)
-
-                                Spacer()
-
-                                Button(action: {
-                                    toggleFlashSafe(toggleFlash)
-                                }) {
-                                    Image(systemName: isTorchOn ? "bolt.fill" : "bolt.slash.fill")
-                                        .font(.title2)
-                                        .foregroundColor(.white)
-                                        .padding(12)
-                                        .background(Circle().fill(Color.black.opacity(0.6)))
-                                }
-//                                .disabled(isTogglingFlash || isRecording)
-//                                .opacity((isTogglingFlash || isRecording) ? 0.5 : 1.0)
-                                .disabled(true)
-                                .opacity(0.0)
-                                .padding(.trailing, 16)
-                                .padding(.top, geometry.safeAreaInsets.top > 0 ? geometry.safeAreaInsets.top + 32 : 48)
-                                .accessibilityLabel(isTorchOn ? "Turn flash off" : "Turn flash on")
-                            }
-
-                            Spacer()
-                        }
-
-                        // BOTTOM CONTROLS
-                        VStack(spacing: 12) {
-                            Spacer()
-
-                            RecordingTimerView(elapsedTime: recordingTime, isRecording: isRecording)
-                                .padding(.bottom, 4)
-
-                            // Mode switch (Photo / Video)
-                            HStack(spacing: 10) {
-                                // Photo button - disabled if currently recording in video mode
-                                modeChip(title: "ФОТО", active: cameraMode == .photo) {
-                                    if !isRecording {   // ✅ prevent switching to photo while recording
-                                        cameraMode = .photo
-                                    }
-                                }
-                                .disabled(isRecording && cameraMode == .video)
-
-                                // Video button (always available)
-                                modeChip(title: "ВІДЕО", active: cameraMode == .video) {
-                                    cameraMode = .video
-                                }
-                            }
-                            .padding(.horizontal, 16)
-
-                            HStack(alignment: .center, spacing: 40) {
-                                Button(action: {
-                                    if isRecording { stopRecordingTimer() }
-                                    inputViewModel.mediaPickerMode = .albums
-                                }) {
-                                    Image(systemName: "photo.on.rectangle")
-                                        .font(.title2)
-                                        .foregroundColor(.white)
-                                        .padding(12)
-                                        .background(Circle().fill(Color.black.opacity(0.6)))
-                                }
-                                .disabled(isRecording)
-                                .opacity(isRecording ? 0.5 : 1.0)
-                                .accessibilityLabel("Open gallery")
-                    
-                                ShutterButton(
-                                    kind: cameraMode == .photo ? .photo : .video,
-                                    isRecording: isRecording,
-                                    isDisabled: (isSwitchingCamera || isTogglingFlash)
-                                ) {
-                                    // actionPhoto
-                                    takePhoto()
-                                } actionStartVideo: {
-                                    startRecord()
-                                    startRecordingTimer()
-                                } actionStopVideo: {
-                                    stopRecord()
-                                    stopRecordingTimer()
-                                }
-
-                                Button(action: {
-                                    switchCameraSafe(switchCamera)
-                                }) {
-                                    Image(systemName: cameraPosition == .back ? "camera.rotate" : "camera.rotate.fill")
-                                        .font(.title2)
-                                        .foregroundColor(.white)
-                                        .padding(12)
-                                        .background(Circle().fill(Color.black.opacity(0.6)))
-                                }
-                                .disabled(isSwitchingCamera || isRecording)
-                                .opacity((isSwitchingCamera || isRecording) ? 0.5 : 1.0)
-                                .accessibilityLabel("Switch camera")
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, geometry.safeAreaInsets.bottom > 0 ? geometry.safeAreaInsets.bottom + 20 : 36)
-                        }
-                    }
-                }
-            }
-            .didPressCancelCamera {
-                inputViewModel.showPicker = false
-                cancelPendingSwitches()
-                stopRecordingTimer()
-            }
-            .currentFullscreenMedia($currentFullscreenMedia)
-            .showLiveCameraCell()
-            .setSelectionParameters(mediaPickerSelectionParameters)
-            .pickerMode($inputViewModel.mediaPickerMode)
-            .orientationHandler(orientationHandler)
-            .background(pickerTheme.main.pickerBackground)
-            .ignoresSafeArea(.all)
-            .onChange(of: currentFullscreenMedia) { _, _ in
-                assembleSelectedMedia()
-            }
-            .onChange(of: inputViewModel.showPicker) { _, newValue in
-                let showFullscreenPreview = mediaPickerSelectionParameters?.showFullscreenPreview ?? true
-                let selectionLimit = mediaPickerSelectionParameters?.selectionLimit ?? 1
-
-                if selectionLimit == 1 && !showFullscreenPreview {
-                    assembleSelectedMedia()
-                    inputViewModel.send()
-                }
-                if !newValue {
-                    // Reset state when picker is dismissed
-                    stopRecordingTimer()
-                    isSwitchingCamera = false
-                    isTogglingFlash = false
-                    cancelPendingSwitches()
-                    liveFeedReady = true
-                }
-            }
-        }
+        EmptyView()
+//        GeometryReader { g in
+//            MediaPicker(isPresented: $inputViewModel.showPicker) {
+//                seleсtedMedias = $0
+//                assembleSelectedMedia()
+//            } albumSelectionBuilder: { _, albumSelectionView, _ in
+//                ZStack {
+//                    VStack(spacing: 0) {
+//                        albumSelectionHeaderView
+//                            .padding(.top, g.safeAreaInsets.top > 0 ? g.safeAreaInsets.top : 20)
+//                            .padding(.bottom, 8)
+//                        albumSelectionView
+//                        Spacer()
+//                        inputView
+//                            .padding(.bottom, g.safeAreaInsets.bottom > 0 ? g.safeAreaInsets.bottom : 20)
+//                    }
+//                    .background(pickerTheme.main.pickerBackground)
+//                }
+//                .ignoresSafeArea()
+//            } cameraSelectionBuilder: { _, cancelClosure, cameraSelectionView in
+//                ZStack {
+//                    VStack(spacing: 0) {
+//                        headerCloseOnly(
+//                            topInset: g.safeAreaInsets.top > 0 ? g.safeAreaInsets.top : 20,
+//                            title: chatTitle,
+//                            onClose: {
+//                                cancelClosure()
+//                                cancelPendingSwitches()
+//                                stopRecordingTimer()
+//                            }
+//                        )
+//
+//                        cameraSelectionView
+//
+//                        cameraBottomControls(
+//                            safeBottomInset: g.safeAreaInsets.bottom,
+//                            onShowPreview: nil
+//                        )
+//                    }
+//                }
+//                .ignoresSafeArea()
+//            } cameraViewBuilder: { liveCamera, cancel, showPreview, takePhoto, startRecord, stopRecord, toggleFlash, switchCamera in
+//                GeometryReader { geometry in
+//                    ZStack {
+//                        // Keep the layout identical; only control live feed visibility during switching.
+//                        Group {
+//                            if liveFeedReady {
+//                                liveCamera
+//                            } else {
+//                                // Placeholder while switching; same footprint to avoid layout jumps.
+//                                Color.black
+//                            }
+//                        }
+//                        .ignoresSafeArea()
+//
+//                        // TOP CONTROLS
+//                        VStack {
+//                            HStack {
+//                                Button(action: {
+//                                    cancel()
+//                                    cancelPendingSwitches()
+//                                    stopRecordingTimer()
+//                                }) {
+//                                    Image(systemName: "xmark")
+//                                        .font(.title2)
+//                                        .foregroundColor(.white)
+//                                        .padding(12)
+//                                        .background(Circle().fill(Color.black.opacity(0.6)))
+//                                }
+//                                .padding(.leading, 16)
+//                                .padding(.top, geometry.safeAreaInsets.top > 0 ? geometry.safeAreaInsets.top + 32 : 48)
+//
+//                                Spacer()
+//
+//                                Button(action: {
+//                                    toggleFlashSafe(toggleFlash)
+//                                }) {
+//                                    Image(systemName: isTorchOn ? "bolt.fill" : "bolt.slash.fill")
+//                                        .font(.title2)
+//                                        .foregroundColor(.white)
+//                                        .padding(12)
+//                                        .background(Circle().fill(Color.black.opacity(0.6)))
+//                                }
+////                                .disabled(isTogglingFlash || isRecording)
+////                                .opacity((isTogglingFlash || isRecording) ? 0.5 : 1.0)
+//                                .disabled(true)
+//                                .opacity(0.0)
+//                                .padding(.trailing, 16)
+//                                .padding(.top, geometry.safeAreaInsets.top > 0 ? geometry.safeAreaInsets.top + 32 : 48)
+//                                .accessibilityLabel(isTorchOn ? "Turn flash off" : "Turn flash on")
+//                            }
+//
+//                            Spacer()
+//                        }
+//
+//                        // BOTTOM CONTROLS
+//                        VStack(spacing: 12) {
+//                            Spacer()
+//
+//                            RecordingTimerView(elapsedTime: recordingTime, isRecording: isRecording)
+//                                .padding(.bottom, 4)
+//
+//                            // Mode switch (Photo / Video)
+//                            HStack(spacing: 10) {
+//                                // Photo button - disabled if currently recording in video mode
+//                                modeChip(title: "ФОТО", active: cameraMode == .photo) {
+//                                    if !isRecording {   // ✅ prevent switching to photo while recording
+//                                        cameraMode = .photo
+//                                    }
+//                                }
+//                                .disabled(isRecording && cameraMode == .video)
+//
+//                                // Video button (always available)
+//                                modeChip(title: "ВІДЕО", active: cameraMode == .video) {
+//                                    cameraMode = .video
+//                                }
+//                            }
+//                            .padding(.horizontal, 16)
+//
+//                            HStack(alignment: .center, spacing: 40) {
+//                                Button(action: {
+//                                    if isRecording { stopRecordingTimer() }
+//                                    inputViewModel.mediaPickerMode = .albums
+//                                }) {
+//                                    Image(systemName: "photo.on.rectangle")
+//                                        .font(.title2)
+//                                        .foregroundColor(.white)
+//                                        .padding(12)
+//                                        .background(Circle().fill(Color.black.opacity(0.6)))
+//                                }
+//                                .disabled(isRecording)
+//                                .opacity(isRecording ? 0.5 : 1.0)
+//                                .accessibilityLabel("Open gallery")
+//                    
+//                                ShutterButton(
+//                                    kind: cameraMode == .photo ? .photo : .video,
+//                                    isRecording: isRecording,
+//                                    isDisabled: (isSwitchingCamera || isTogglingFlash)
+//                                ) {
+//                                    // actionPhoto
+//                                    takePhoto()
+//                                } actionStartVideo: {
+//                                    startRecord()
+//                                    startRecordingTimer()
+//                                } actionStopVideo: {
+//                                    stopRecord()
+//                                    stopRecordingTimer()
+//                                }
+//
+//                                Button(action: {
+//                                    switchCameraSafe(switchCamera)
+//                                }) {
+//                                    Image(systemName: cameraPosition == .back ? "camera.rotate" : "camera.rotate.fill")
+//                                        .font(.title2)
+//                                        .foregroundColor(.white)
+//                                        .padding(12)
+//                                        .background(Circle().fill(Color.black.opacity(0.6)))
+//                                }
+//                                .disabled(isSwitchingCamera || isRecording)
+//                                .opacity((isSwitchingCamera || isRecording) ? 0.5 : 1.0)
+//                                .accessibilityLabel("Switch camera")
+//                            }
+//                            .padding(.horizontal, 20)
+//                            .padding(.bottom, geometry.safeAreaInsets.bottom > 0 ? geometry.safeAreaInsets.bottom + 20 : 36)
+//                        }
+//                    }
+//                }
+//            }
+//            .didPressCancelCamera {
+//                inputViewModel.showPicker = false
+//                cancelPendingSwitches()
+//                stopRecordingTimer()
+//            }
+//            .currentFullscreenMedia($currentFullscreenMedia)
+//            .showLiveCameraCell()
+//            .setSelectionParameters(mediaPickerSelectionParameters)
+//            .pickerMode($inputViewModel.mediaPickerMode)
+//            .orientationHandler(orientationHandler)
+//            .background(pickerTheme.main.pickerBackground)
+//            .ignoresSafeArea(.all)
+//            .onChange(of: currentFullscreenMedia) { _, _ in
+//                assembleSelectedMedia()
+//            }
+//            .onChange(of: inputViewModel.showPicker) { _, newValue in
+//                let showFullscreenPreview = mediaPickerSelectionParameters?.showFullscreenPreview ?? true
+//                let selectionLimit = mediaPickerSelectionParameters?.selectionLimit ?? 1
+//
+//                if selectionLimit == 1 && !showFullscreenPreview {
+//                    assembleSelectedMedia()
+//                    inputViewModel.send()
+//                }
+//                if !newValue {
+//                    // Reset state when picker is dismissed
+//                    stopRecordingTimer()
+//                    isSwitchingCamera = false
+//                    isTogglingFlash = false
+//                    cancelPendingSwitches()
+//                    liveFeedReady = true
+//                }
+//            }
+//        }
     }
 
     // MARK: - Helpers
@@ -488,7 +490,7 @@ struct RecordingTimerView: View {
             }
         }
         // Safety: if parent toggles 'isRecording' while still mounted
-        .onChange(of: isRecording) { _, rec in
+        .onChange(of: isRecording) { rec in
             if rec { blink = true } else { blink = false }
         }
     }
@@ -618,7 +620,7 @@ struct ShutterButton: View {
             .opacity(isDisabled ? 0.5 : 1.0)
             .animation(.easeInOut(duration: 0.1), value: pressed)
             .onAppear { syncAnimationsWithState() }
-            .onChange(of: isRecording) { _, _ in syncAnimationsWithState() }
+            .onChange(of: isRecording) { _ in syncAnimationsWithState() }
         }
         .buttonStyle(ShutterButtonStyle(isPressed: pressed))
         .simultaneousGesture(

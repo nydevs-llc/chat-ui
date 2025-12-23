@@ -2,7 +2,7 @@
 //  Created by Alex.M on 16.06.2022.
 //
 
-import ExyteMediaPicker
+//import ExyteMediaPicker
 import UIKit
 
 public enum AttachmentType: String, Codable {
