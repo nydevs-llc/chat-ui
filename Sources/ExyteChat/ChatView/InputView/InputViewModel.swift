@@ -47,6 +47,8 @@ final class InputViewModel: ObservableObject {
 
     func reset() {
         DispatchQueue.main.async { [weak self] in
+            self?.attachments.editingMessage = nil
+            self?.attachments.replyMessage = nil
             self?.showPicker = false
             self?.text = ""
             self?.saveEditingClosure = nil

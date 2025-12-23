@@ -83,6 +83,7 @@ public struct InputViewAttachments {
     public var medias: [Media] = []
     public var recording: Recording?
     public var replyMessage: ReplyMessage?
+    public var editingMessage: ReplyMessage?
 }
 
 struct InputView: View {
@@ -123,6 +124,7 @@ struct InputView: View {
             viewOnTop
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .animation(.easeInOut(duration: 0.25), value: viewModel.attachments.replyMessage)
+                .animation(.easeInOut(duration: 0.25), value: viewModel.attachments.editingMessage)
             viewMentionsOverlay
             HStack(alignment: .bottom, spacing: 10) {
                 if style == .message {
@@ -228,42 +230,29 @@ struct InputView: View {
         .frame(minHeight: 40)
     }
 
-    @ViewBuilder
-    var editingButtons: some View {
-        HStack {
-            Button {
-                onAction(.cancelEdit)
-            } label: {
-                Image(systemName: "xmark")
-                    .foregroundStyle(.white)
-                    .fontWeight(.bold)
-                    .padding(5)
-                    .background(Circle().foregroundStyle(.red))
-            }
-            
-            Button {
-                onAction(.saveEdit)
-            } label: {
-                Image(systemName: "checkmark")
-                    .foregroundStyle(.white)
-                    .fontWeight(.bold)
-                    .padding(5)
-                    .background(
-                        Circle()
-                            .foregroundStyle(viewModel.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .gray : .green)
-                    )
-            }
-            .disabled(viewModel.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    var editingSendButton: some View {
+        Button {
+            onAction(.saveEdit)
+        } label: {
+            Image(systemName: "checkmark")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.white)
+                .viewSize(40)
+                .background(
+                    Circle()
+                        .fill(viewModel.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                              ? Color.gray
+                              : theme.colors.sendButtonBackground)
+                )
         }
+        .disabled(viewModel.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     @ViewBuilder
     var rightOutsideButton: some View {
         if state == .editing {
-            editingButtons
-                .frame(height: 40)
-        }
-        else {
+            editingSendButton
+        } else {
             ZStack {
                 if [.isRecordingTap, .isRecordingHold].contains(state) {
                     RecordIndicator()
@@ -305,55 +294,71 @@ struct InputView: View {
     @ViewBuilder
     var viewOnTop: some View {
         if let message = viewModel.attachments.replyMessage {
-            VStack(spacing: 8) {
-                Rectangle()
-                    .foregroundColor(theme.colors.friendMessage)
-                    .frame(height: 2)
+            replyBanner(message: message, isEditing: false)
+        } else if let message = viewModel.attachments.editingMessage {
+            replyBanner(message: message, isEditing: true)
+        }
+    }
 
-                HStack {
+    @ViewBuilder
+    func replyBanner(message: ReplyMessage, isEditing: Bool) -> some View {
+        VStack(spacing: 8) {
+            Rectangle()
+                .foregroundColor(theme.colors.friendMessage)
+                .frame(height: 2)
+
+            HStack {
+                if isEditing {
+                    Image(systemName: "pencil")
+                        .foregroundColor(theme.colors.buttonBackground)
+                } else {
                     theme.images.reply.replyToMessage
-                    Capsule()
-                        .foregroundColor(theme.colors.myMessage)
-                        .frame(width: 2)
-                    VStack(alignment: .leading) {
-                        Text("Reply to \(message.user.name)")
+                }
+                Capsule()
+                    .foregroundColor(theme.colors.myMessage)
+                    .frame(width: 2)
+                VStack(alignment: .leading) {
+                    Text(isEditing ? "Editing" : "Reply to \(message.user.name)")
+                        .font(.caption2)
+                        .foregroundColor(theme.colors.buttonBackground)
+                    if !message.text.isEmpty {
+                        textView(message.text)
                             .font(.caption2)
-                            .foregroundColor(theme.colors.buttonBackground)
-                        if !message.text.isEmpty {
-                            textView(message.text)
-                                .font(.caption2)
-                                .lineLimit(1)
-                                .foregroundColor(theme.colors.textLightContext)
-                        }
+                            .lineLimit(1)
+                            .foregroundColor(theme.colors.textLightContext)
                     }
-                    .padding(.vertical, 2)
+                }
+                .padding(.vertical, 2)
 
-                    Spacer()
+                Spacer()
 
-                    if let first = message.attachments.first {
-                        AsyncImageView(url: first.thumbnail, imageData: first.thumbnailData)
-                            .viewSize(30)
-                            .cornerRadius(4)
-                            .padding(.trailing, 16)
-                    }
+                if let first = message.attachments.first {
+                    AsyncImageView(url: first.thumbnail, imageData: first.thumbnailData)
+                        .viewSize(30)
+                        .cornerRadius(4)
+                        .padding(.trailing, 16)
+                }
 
-                    if let _ = message.recording {
-                        theme.images.inputView.microphone
-                            .renderingMode(.template)
-                            .foregroundColor(theme.colors.buttonBackground)
-                    }
+                if let _ = message.recording {
+                    theme.images.inputView.microphone
+                        .renderingMode(.template)
+                        .foregroundColor(theme.colors.buttonBackground)
+                }
 
-                    theme.images.reply.cancelReply
-                        .onTapGesture {
-                            withAnimation(.easeInOut(duration: 0.3)) {
+                theme.images.reply.cancelReply
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            if isEditing {
+                                onAction(.cancelEdit)
+                            } else {
                                 viewModel.attachments.replyMessage = nil
                             }
                         }
-                }
-                .padding(.horizontal, 26)
+                    }
             }
-            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 26)
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder

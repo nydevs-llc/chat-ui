@@ -81,7 +81,8 @@ struct ReactionSelectionView: View {
 
                     ForEach(emojis.indices, id: \.self) { index in
                         Button {
-                            transitionToViewState(.picked(emojis[index]))
+//                            transitionToViewState(.picked(emojis[index]))
+                                reactionClosure(.emoji(emojis[index]))
                         } label: {
                             emojiView(
                                 emoji: emojis[index],
