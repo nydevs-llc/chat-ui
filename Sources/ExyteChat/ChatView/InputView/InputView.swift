@@ -304,28 +304,36 @@ struct InputView: View {
     func replyBanner(message: ReplyMessage, isEditing: Bool) -> some View {
         VStack(spacing: 8) {
             Rectangle()
-                .foregroundColor(theme.colors.friendMessage)
+                .foregroundColor(Color(hex: "E6E6E6"))
                 .frame(height: 2)
 
             HStack {
                 if isEditing {
-                    Image(systemName: "pencil")
-                        .foregroundColor(theme.colors.buttonBackground)
+                    theme.images.edit.editIcon
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 15, height: 15)
+                        .foregroundColor(Color(hex: "2E65D8"))
                 } else {
                     theme.images.reply.replyToMessage
+                        .renderingMode(.template)
+                        .foregroundColor(Color(hex: "2E65D8"))
                 }
+
                 Capsule()
                     .foregroundColor(theme.colors.myMessage)
                     .frame(width: 2)
-                VStack(alignment: .leading) {
-                    Text(isEditing ? "Editing" : "Reply to \(message.user.name)")
-                        .font(.caption2)
-                        .foregroundColor(theme.colors.buttonBackground)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isEditing ? theme.strings.editingTitle : theme.strings.replyToTitle(message.user.name))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.gray)
                     if !message.text.isEmpty {
                         textView(message.text)
-                            .font(.caption2)
+                            .font(.system(size: 14))
                             .lineLimit(1)
-                            .foregroundColor(theme.colors.textLightContext)
+                            .foregroundColor(.black)
                     }
                 }
                 .padding(.vertical, 2)
@@ -342,19 +350,22 @@ struct InputView: View {
                 if let _ = message.recording {
                     theme.images.inputView.microphone
                         .renderingMode(.template)
-                        .foregroundColor(theme.colors.buttonBackground)
+                        .foregroundColor(Color(hex: "2E65D8"))
                 }
 
-                theme.images.reply.cancelReply
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            if isEditing {
-                                onAction(.cancelEdit)
-                            } else {
-                                viewModel.attachments.replyMessage = nil
-                            }
+                Button {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        if isEditing {
+                            onAction(.cancelEdit)
+                        } else {
+                            viewModel.attachments.replyMessage = nil
                         }
                     }
+                } label: {
+                    theme.images.reply.cancelReply
+                        .renderingMode(.template)
+                        .foregroundColor(Color(hex: "2E65D8"))
+                }
             }
             .padding(.horizontal, 26)
         }

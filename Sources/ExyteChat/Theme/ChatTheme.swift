@@ -32,11 +32,27 @@ public extension View {
 public struct ChatTheme {
     public let colors: ChatTheme.Colors
     public let images: ChatTheme.Images
+    public let strings: ChatTheme.Strings
 
     public init(colors: ChatTheme.Colors = .init(),
-                images: ChatTheme.Images = .init()) {
+                images: ChatTheme.Images = .init(),
+                strings: ChatTheme.Strings = .init()) {
         self.colors = colors
         self.images = images
+        self.strings = strings
+    }
+
+    public struct Strings {
+        public var editingTitle: String
+        public var replyToTitle: (String) -> String
+
+        public init(
+            editingTitle: String = "Editing",
+            replyToTitle: @escaping (String) -> String = { name in "Reply to \(name)" }
+        ) {
+            self.editingTitle = editingTitle
+            self.replyToTitle = replyToTitle
+        }
     }
 
     public struct Colors {
@@ -190,9 +206,14 @@ public struct ChatTheme {
             public var cancelReply: Image
             public var replyToMessage: Image
         }
-        
+
         public struct Conversation {
             public var background: Image?
+        }
+
+        public struct Edit {
+            public var editIcon: Image
+            public var closeIcon: Image
         }
 
         public var backButton: Image
@@ -207,6 +228,7 @@ public struct ChatTheme {
         public var recordAudio: RecordAudio
         public var reply: Reply
         public var conversation: Conversation
+        public var edit: Edit
 
         public init(
             camera: Image? = nil,
@@ -256,7 +278,9 @@ public struct ChatTheme {
             replyToMessage: Image? = nil,
             backButton: Image? = nil,
             scrollToBottom: Image? = nil,
-            conversationBackground: Image? = nil
+            conversationBackground: Image? = nil,
+            editIcon: Image? = nil,
+            closeIcon: Image? = nil
         ) {
             self.backButton = backButton ?? Image("backArrow", bundle: .current)
             self.scrollToBottom = scrollToBottom ?? Image("scrollToBottom", bundle: .current)
@@ -329,9 +353,14 @@ public struct ChatTheme {
                 cancelReply: cancelReply ?? Image("cancelReply", bundle: .current),
                 replyToMessage: replyToMessage ?? Image("replyToMessage", bundle: .current)
             )
-            
+
             self.conversation = .init(
                 background: conversationBackground
+            )
+
+            self.edit = Edit(
+                editIcon: editIcon ?? Image(systemName: "pencil"),
+                closeIcon: closeIcon ?? Image(systemName: "xmark")
             )
         }
     }
