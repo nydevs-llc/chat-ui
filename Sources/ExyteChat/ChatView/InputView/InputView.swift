@@ -6,7 +6,7 @@
 //
 
 import SwiftUI
-//import ExyteMediaPicker
+import ExyteMediaPicker
 
 public enum InputViewStyle {
     case message
@@ -194,7 +194,7 @@ struct InputView: View {
                     style: style,
                     availableInput: availableInput
                 )
-                .onChange(of: viewModel.text) { newText in
+                .onChange(of: viewModel.text) { _, newText in
                     if let match = newText.range(of: #"@[\w]{0,}$"#, options: .regularExpression) {
                         let partial = String(newText[match].dropFirst())
                         mentionsViewModel.updateSuggestions(for: partial)

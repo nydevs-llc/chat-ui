@@ -7,7 +7,7 @@
 
 import SwiftUI
 import FloatingButton
-//import ExyteMediaPicker
+import ExyteMediaPicker
 
 public typealias MediaPickerParameters = SelectionParamsHolder
 
@@ -274,35 +274,35 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
                 }
             )
         
-            .onChange(of: inputViewModel.showAttachmentsSheet) { newValue in
+            .onChange(of: inputViewModel.showAttachmentsSheet) { _, newValue in
                 if newValue {
                     globalFocusState.focus = nil
                 }
             }
         
-            .onChange(of: inputViewModel.showLocationPicker) { newValue in
+            .onChange(of: inputViewModel.showLocationPicker) { _, newValue in
                 if newValue {
                     globalFocusState.focus = nil
                 }
             }
 
-            .onChange(of: inputViewModel.showPicker) { newValue in
+            .onChange(of: inputViewModel.showPicker) { _, newValue in
                 if newValue {
                     globalFocusState.focus = nil
                 }
             }
         
-            .onChange(of: inputViewModel.showFilePicker) { newValue in
+            .onChange(of: inputViewModel.showFilePicker) { _, newValue in
                 if newValue {
                     globalFocusState.focus = nil
                 }
             }
             
-            .onChange(of: isUploading) { uploading in
+            .onChange(of: isUploading) { _, uploading in
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
             }
             
-            .onChange(of: inputViewModel.text) { draft in
+            .onChange(of: inputViewModel.text) { _, draft in
                 didChangeDraft(draft)
             }
             

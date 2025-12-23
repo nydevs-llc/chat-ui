@@ -130,7 +130,7 @@ struct ReplyGesture: ViewModifier {
                     .foregroundStyle(.white)
                     .opacity(progress)
                     .scaleEffect(progress)
-                    .symbolScaleEffect(isActive: shouldPlayHapticFeedback)
+                    .symbolEffect(.scale.up, isActive: shouldPlayHapticFeedback)
             }
             .scaleEffect(.init(width: replySymbolOpacity, height: replySymbolOpacity))
             .offset(x: swipeDirection == .left ? -16 : 16)
@@ -149,18 +149,5 @@ extension View {
             replySymbolColor: replySymbolColor,
             onReply: handler
         ))
-    }
-}
-
-extension View {
-    @ViewBuilder
-    func symbolScaleEffect(isActive: Bool) -> some View {
-        if #available(iOS 17.0, *) {
-            self.symbolEffect(.scale.up, isActive: isActive)
-        } else {
-            self
-                .scaleEffect(isActive ? 1.2 : 1.0)
-                .animation(.easeInOut(duration: 0.2), value: isActive)
-        }
     }
 }

@@ -70,7 +70,6 @@ struct ReactionSelectionView: View {
         let currentEmojiReactions = currentReactions.compactMap(\.emoji)
         // Compact when not .row (covers .search and .picked)
         let isCompact = (viewState != .row && viewState != .initial)
-        let horizontalPadding = !isCompact ? max(hPad, bubbleDiameter/2 + 6) : 0
 
         HStack(spacing: 0) {
             leadingPaddingView()
@@ -96,10 +95,10 @@ struct ReactionSelectionView: View {
                     if allowEmojiSearch, viewState.needsSearchButton {
                         additionalEmojiPickerView()
                             .frame(width: bubbleDiameter, height: bubbleDiameter, alignment: .center)
-                            .onChange(of: selectedEmoji) { _ in
+                            .onChange(of: selectedEmoji) {
                                 transitionToViewState(.picked(selectedEmoji))
                             }
-                            .onChange(of: emojiEntryIsFocused) { _ in
+                            .onChange(of: emojiEntryIsFocused) {
                                 if emojiEntryIsFocused { transitionToViewState(.search) }
                             }
                     }
@@ -107,7 +106,6 @@ struct ReactionSelectionView: View {
                     if isCompact { Spacer(minLength: 0) }
                 }
                 .padding(.vertical, vPad)
-                .padding(.horizontal, horizontalPadding)
                 // Give the inner row a fixed box only in compact modes so Spacers can center content
                 .frame(
                     width: isCompact ? maxWidth : nil,
@@ -115,12 +113,11 @@ struct ReactionSelectionView: View {
                     alignment: .center
                 )
             }
-            // убрано в пользу padding
-//            .contentMargins(
-//                .horizontal,
-//                !isCompact ? max(hPad, bubbleDiameter/2 + 6) : 0,
-//                for: .scrollContent
-//            )
+            .contentMargins(
+                .horizontal,
+                !isCompact ? max(hPad, bubbleDiameter/2 + 6) : 0,
+                for: .scrollContent
+            )
             .scrollIndicators(.hidden)
             .padding(.horizontal, isCompact ? 0 : 2)          // key: no extra inset in compact
             .modifier(InteriorRadialShadow(color: viewState.needsInteriorShadow ? backgroundColor : .clear))
@@ -142,7 +139,7 @@ struct ReactionSelectionView: View {
         }
         .offset(x: xOffset, y: yOffset)
         .onAppear { transitionToViewState(.row) }
-        .onChange(of: keyboardState.isShown) { _ in
+        .onChange(of: keyboardState.isShown) {
             if !keyboardState.isShown && viewState == .search {
                 transitionToViewState(.row)
             }
@@ -178,7 +175,7 @@ struct ReactionSelectionView: View {
                 .textSelection(.disabled)
                 .opacity(0.01)
                 .allowsHitTesting(false)
-                .onChange(of: selectedEmoji) { _ in
+                .onChange(of: selectedEmoji) {
                     selectedEmoji = selectedEmoji.lastEmojiOrEmpty()
                     if !selectedEmoji.isEmpty {
                         transitionToViewState(.picked(selectedEmoji))

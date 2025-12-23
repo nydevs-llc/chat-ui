@@ -211,7 +211,7 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
                 transitionViewState(to: .ready)
             }
         }
-        .onChange(of: keyboardState.keyboardFrame) { _ in
+        .onChange(of: keyboardState.keyboardFrame) {
             if viewState == .ready, keyboardState.isShown {
                 transitionViewState(to: .keyboard)
             }
