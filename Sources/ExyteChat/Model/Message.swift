@@ -7,6 +7,20 @@
 
 import SwiftUI
 
+public struct MessagePublicationAttachment: Hashable {
+    public let id: Int
+    public let text: String
+    public let photoURL: URL?
+    public let blurHash: String?
+
+    public init(id: Int, text: String, photoURL: URL?, blurHash: String?) {
+        self.id = id
+        self.text = text
+        self.photoURL = photoURL
+        self.blurHash = blurHash
+    }
+}
+
 public struct Message: Identifiable, Hashable {
 
     public enum Status: Equatable, Hashable {
@@ -61,6 +75,7 @@ public struct Message: Identifiable, Hashable {
     public var replyMessage: ReplyMessage?
     public var isEncrypted: Bool
     public var isDeleted: Bool
+    public var publicationAttachment: MessagePublicationAttachment?
     public var triggerRedraw: UUID?
     
     public var type: MessageType
@@ -76,7 +91,8 @@ public struct Message: Identifiable, Hashable {
                 replyMessage: ReplyMessage? = nil,
                 type: MessageType = .text,
                 isEncrypted: Bool = false,
-                isDeleted: Bool = false) {
+                isDeleted: Bool = false,
+                publicationAttachment: MessagePublicationAttachment? = nil) {
 
         self.id = id
         self.user = user
@@ -90,6 +106,7 @@ public struct Message: Identifiable, Hashable {
         self.type = type
         self.isEncrypted = isEncrypted
         self.isDeleted = isDeleted
+        self.publicationAttachment = publicationAttachment
     }
 
     public static func makeMessage(

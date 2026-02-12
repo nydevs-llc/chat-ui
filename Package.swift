@@ -21,6 +21,10 @@ let package = Package(
         .package(
             url: "https://github.com/exyte/FloatingButton",
             from: "1.2.2"
+        ),
+        .package(
+            url: "https://github.com/kean/Nuke.git",
+            from: "12.0.0"
         )
     ],
     targets: [
@@ -29,6 +33,7 @@ let package = Package(
             dependencies: [
                 .product(name: "ExyteMediaPicker", package: "MediaPicker"),
                 .product(name: "FloatingButton", package: "FloatingButton"),
+                .product(name: "NukeUI", package: "Nuke"),
             ]
         ),
         .testTarget(

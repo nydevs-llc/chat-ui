@@ -676,7 +676,7 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
             let type = action.type()
             switch type {
             case .edit:
-                return message.type == .text && message.user.isCurrentUser
+                return message.type == .text && message.user.isCurrentUser && message.publicationAttachment == nil
             case .delete:
                 return message.user.isCurrentUser && message.isDeliverableStatus
             case .reply, .forward:

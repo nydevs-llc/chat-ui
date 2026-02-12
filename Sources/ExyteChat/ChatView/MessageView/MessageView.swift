@@ -134,7 +134,16 @@ struct MessageView: View {
                 if !message.attachments.isEmpty {
                     attachmentsView(message)
                 }
-                
+
+                if let pubAttachment = message.publicationAttachment {
+                    MessagePublicationCardView(
+                        attachment: pubAttachment,
+                        isOutgoing: message.user.isCurrentUser
+                    )
+                    .padding(.horizontal, 6)
+                    .padding(.top, 6)
+                }
+
                 if message.type == .geo {
                     VStack(alignment: .trailing, spacing: 8) {
                         locationView(message)
