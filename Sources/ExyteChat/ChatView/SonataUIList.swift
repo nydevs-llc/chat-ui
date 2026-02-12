@@ -191,25 +191,40 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
                 guard let (s, r) = self.rowIndexByItemID[itemID] else { return cell }
                 let row = self.lastSections[s].rows[r]
 
-                cell.contentConfiguration = UIHostingConfiguration {
-                    ChatMessageView(
-                        viewModel: self.outer.viewModel,
-                        messageBuilder: self.outer.messageBuilder,
-                        row: row,
-                        chatType: self.outer.type,
-                        avatarSize: self.outer.avatarSize,
-                        tapAvatarClosure: self.outer.tapAvatarClosure,
-                        messageUseMarkdown: self.outer.messageUseMarkdown,
-                        isDisplayingMessageMenu: false,
-                        showMessageTimeView: self.outer.showMessageTimeView,
-                        showAvatar: self.outer.showAvatars,
-                        messageFont: self.outer.messageFont,
-                        tapDocumentClosure: self.outer.tapDocumentClosure,
-                        groupUsers: self.outer.groupUsers
-                    )
-                    .background(MessageMenuPreferenceViewSetter(id: row.id))
+                let messageView = ChatMessageView(
+                    viewModel: self.outer.viewModel,
+                    messageBuilder: self.outer.messageBuilder,
+                    row: row,
+                    chatType: self.outer.type,
+                    avatarSize: self.outer.avatarSize,
+                    tapAvatarClosure: self.outer.tapAvatarClosure,
+                    messageUseMarkdown: self.outer.messageUseMarkdown,
+                    isDisplayingMessageMenu: false,
+                    showMessageTimeView: self.outer.showMessageTimeView,
+                    showAvatar: self.outer.showAvatars,
+                    messageFont: self.outer.messageFont,
+                    tapDocumentClosure: self.outer.tapDocumentClosure,
+                    groupUsers: self.outer.groupUsers
+                )
+                .background(MessageMenuPreferenceViewSetter(id: row.id))
+
+                if #available(iOS 16.0, *) {
+                    cell.contentConfiguration = UIHostingConfiguration { messageView }
+                        .margins(.all, 0)
+                } else {
+                    // Fallback: embed via UIHostingController
+                    cell.contentView.subviews.forEach { $0.removeFromSuperview() }
+                    let hc = UIHostingController(rootView: messageView)
+                    hc.view.backgroundColor = .clear
+                    hc.view.translatesAutoresizingMaskIntoConstraints = false
+                    cell.contentView.addSubview(hc.view)
+                    NSLayoutConstraint.activate([
+                        hc.view.topAnchor.constraint(equalTo: cell.contentView.topAnchor),
+                        hc.view.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor),
+                        hc.view.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor),
+                        hc.view.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor)
+                    ])
                 }
-                .margins(.all, 0)
 
                 cell.contentView.transform = self.invertT
                 cell.backgroundColor = .clear

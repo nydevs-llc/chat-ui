@@ -728,27 +728,41 @@ struct UIList<MessageContent: View, InputView: View>: UIViewRepresentable {
             tableViewCell.backgroundColor = .clear//UIColor(mainBackgroundColor)
 
             let row = sections[indexPath.section].rows[indexPath.row]
-            tableViewCell.contentConfiguration = UIHostingConfiguration {
-                ChatMessageView(
-                    viewModel: viewModel,
-                    messageBuilder: messageBuilder,
-                    row: row, chatType: type,
-                    avatarSize: avatarSize,
-                    tapAvatarClosure: tapAvatarClosure,
-                    messageUseMarkdown: messageUseMarkdown,
-                    isDisplayingMessageMenu: false,
-                    showMessageTimeView: showMessageTimeView,
-                    showAvatar: showAvatars,
-                    messageFont: messageFont,
-                    tapDocumentClosure: tapDocumentClosure,
-                    groupUsers: groupUsers)
+            let messageView = ChatMessageView(
+                viewModel: viewModel,
+                messageBuilder: messageBuilder,
+                row: row, chatType: type,
+                avatarSize: avatarSize,
+                tapAvatarClosure: tapAvatarClosure,
+                messageUseMarkdown: messageUseMarkdown,
+                isDisplayingMessageMenu: false,
+                showMessageTimeView: showMessageTimeView,
+                showAvatar: showAvatars,
+                messageFont: messageFont,
+                tapDocumentClosure: tapDocumentClosure,
+                groupUsers: groupUsers)
 //                .id(row.id)
 //                .transition(.scale)
                 .background(MessageMenuPreferenceViewSetter(id: row.id))
                 .rotationEffect(Angle(degrees: (type == .conversation ? 180 : 0)))
+
+            if #available(iOS 16.0, *) {
+                tableViewCell.contentConfiguration = UIHostingConfiguration { messageView }
+                    .minSize(width: 0, height: 0)
+                    .margins(.all, 0)
+            } else {
+                tableViewCell.contentView.subviews.forEach { $0.removeFromSuperview() }
+                let hc = UIHostingController(rootView: messageView)
+                hc.view.backgroundColor = .clear
+                hc.view.translatesAutoresizingMaskIntoConstraints = false
+                tableViewCell.contentView.addSubview(hc.view)
+                NSLayoutConstraint.activate([
+                    hc.view.topAnchor.constraint(equalTo: tableViewCell.contentView.topAnchor),
+                    hc.view.bottomAnchor.constraint(equalTo: tableViewCell.contentView.bottomAnchor),
+                    hc.view.leadingAnchor.constraint(equalTo: tableViewCell.contentView.leadingAnchor),
+                    hc.view.trailingAnchor.constraint(equalTo: tableViewCell.contentView.trailingAnchor)
+                ])
             }
-            .minSize(width: 0, height: 0)
-            .margins(.all, 0)
 
             return tableViewCell
         }
@@ -802,20 +816,19 @@ extension UIList {
 }
 
 actor UpdateQueue {
-    // MARK: - Tuning
-    private let debounce: Duration = .milliseconds(20)    // 20ms debounce
-    private let maxWait:  Duration = .milliseconds(120)   // flush at least every 120ms
+    // MARK: - Tuning (in seconds)
+    private let debounceInterval: TimeInterval = 0.020   // 20ms debounce
+    private let maxWaitInterval:  TimeInterval = 0.120   // flush at least every 120ms
 
     // MARK: - State
     private var isProcessing = false
     private var scheduledTask: Task<Void, Never>?
     private var queue: [@Sendable () async -> Void] = []
 
-    private let clock = ContinuousClock()
-    private var lastFlush: ContinuousClock.Instant
+    private var lastFlush: CFAbsoluteTime
 
     init() {
-        self.lastFlush = clock.now
+        self.lastFlush = CFAbsoluteTimeGetCurrent()
     }
 
     /// Enqueue work; it will be coalesced and executed later.
@@ -844,14 +857,13 @@ actor UpdateQueue {
     private func scheduleNextFlush() {
         scheduledTask?.cancel()
 
-        let sinceLast = clock.now - lastFlush
-        let remainingToMax = max(.zero, maxWait - sinceLast)
-        let delay = min(debounce, remainingToMax)
+        let sinceLast = CFAbsoluteTimeGetCurrent() - lastFlush
+        let remainingToMax = max(0, maxWaitInterval - sinceLast)
+        let delay = min(debounceInterval, remainingToMax)
 
-        scheduledTask = Task { [clock] in
-            if delay > .zero {
-                // cooperative cancellation: if task is cancelled, sleep throws — ignoring issue
-                try? await clock.sleep(for: delay)
+        scheduledTask = Task {
+            if delay > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             }
             await self.processQueue()
         }
@@ -861,12 +873,11 @@ actor UpdateQueue {
     private func processQueue() async {
         guard !isProcessing else { return }
         isProcessing = true
-        // we're flushing now; any pending timer — no need
         scheduledTask?.cancel()
         scheduledTask = nil
 
         defer {
-            lastFlush = clock.now
+            lastFlush = CFAbsoluteTimeGetCurrent()
             isProcessing = false
         }
 

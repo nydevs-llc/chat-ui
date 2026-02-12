@@ -6,7 +6,7 @@
 //
 
 import SwiftUI
-import ExyteMediaPicker
+// import ExyteMediaPicker  // Using MediaPickerFallback stubs
 //import ActivityIndicatorView
 import AVFoundation
 
@@ -66,7 +66,7 @@ struct AttachmentsEditor<InputViewContent: View>: View {
             stopRecordingTimer()
             cancelPendingSwitches()
         }
-        .onChange(of: cameraMode) { _, newMode in
+        .onChange(of: cameraMode) { newMode in
             // Stop the timer when returning to photo mode
             if newMode == .photo, isRecording { stopRecordingTimer() }
         }
@@ -348,10 +348,10 @@ struct AttachmentsEditor<InputViewContent: View>: View {
             .orientationHandler(orientationHandler)
             .background(pickerTheme.main.pickerBackground)
             .ignoresSafeArea(.all)
-            .onChange(of: currentFullscreenMedia) { _, _ in
+            .onChange(of: currentFullscreenMedia) { _ in
                 assembleSelectedMedia()
             }
-            .onChange(of: inputViewModel.showPicker) { _, newValue in
+            .onChange(of: inputViewModel.showPicker) { newValue in
                 let showFullscreenPreview = mediaPickerSelectionParameters?.showFullscreenPreview ?? true
                 let selectionLimit = mediaPickerSelectionParameters?.selectionLimit ?? 1
 
@@ -488,7 +488,7 @@ struct RecordingTimerView: View {
             }
         }
         // Safety: if parent toggles 'isRecording' while still mounted
-        .onChange(of: isRecording) { _, rec in
+        .onChange(of: isRecording) { rec in
             if rec { blink = true } else { blink = false }
         }
     }
@@ -618,7 +618,7 @@ struct ShutterButton: View {
             .opacity(isDisabled ? 0.5 : 1.0)
             .animation(.easeInOut(duration: 0.1), value: pressed)
             .onAppear { syncAnimationsWithState() }
-            .onChange(of: isRecording) { _, _ in syncAnimationsWithState() }
+            .onChange(of: isRecording) { _ in syncAnimationsWithState() }
         }
         .buttonStyle(ShutterButtonStyle(isPressed: pressed))
         .simultaneousGesture(

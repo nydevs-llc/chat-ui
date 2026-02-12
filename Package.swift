@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "Chat",
     platforms: [
-        .iOS(.v17)
+        .iOS(.v15)
     ],
     products: [
         .library(
@@ -14,10 +14,11 @@ let package = Package(
             targets: ["ExyteChat"]),
     ],
     dependencies: [
-        .package(
-            url: "https://github.com/exyte/MediaPicker.git",
-            from: "3.2.4"
-        ),
+        // TODO: Re-enable when MediaPicker supports iOS 15, then delete MediaPickerFallback folder
+        // .package(
+        //     url: "https://github.com/exyte/MediaPicker.git",
+        //     from: "3.2.4"
+        // ),
         .package(
             url: "https://github.com/exyte/FloatingButton",
             from: "1.2.2"
@@ -31,7 +32,7 @@ let package = Package(
         .target(
             name: "ExyteChat",
             dependencies: [
-                .product(name: "ExyteMediaPicker", package: "MediaPicker"),
+                // .product(name: "ExyteMediaPicker", package: "MediaPicker"),
                 .product(name: "FloatingButton", package: "FloatingButton"),
                 .product(name: "NukeUI", package: "Nuke"),
             ]

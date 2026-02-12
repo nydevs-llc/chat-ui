@@ -95,10 +95,10 @@ struct ReactionSelectionView: View {
                     if allowEmojiSearch, viewState.needsSearchButton {
                         additionalEmojiPickerView()
                             .frame(width: bubbleDiameter, height: bubbleDiameter, alignment: .center)
-                            .onChange(of: selectedEmoji) {
+                            .onChange(of: selectedEmoji) { _ in
                                 transitionToViewState(.picked(selectedEmoji))
                             }
-                            .onChange(of: emojiEntryIsFocused) {
+                            .onChange(of: emojiEntryIsFocused) { _ in
                                 if emojiEntryIsFocused { transitionToViewState(.search) }
                             }
                     }
@@ -113,12 +113,8 @@ struct ReactionSelectionView: View {
                     alignment: .center
                 )
             }
-            .contentMargins(
-                .horizontal,
-                !isCompact ? max(hPad, bubbleDiameter/2 + 6) : 0,
-                for: .scrollContent
-            )
-            .scrollIndicators(.hidden)
+            .padding(.horizontal, !isCompact ? max(hPad, bubbleDiameter/2 + 6) : 0)
+            .scrollIndicatorsHidden()
             .padding(.horizontal, isCompact ? 0 : 2)          // key: no extra inset in compact
             .modifier(InteriorRadialShadow(color: viewState.needsInteriorShadow ? backgroundColor : .clear))
             .frame(width: maxWidth, height: maxHeight, alignment: .center) // key: fixed box
@@ -139,7 +135,7 @@ struct ReactionSelectionView: View {
         }
         .offset(x: xOffset, y: yOffset)
         .onAppear { transitionToViewState(.row) }
-        .onChange(of: keyboardState.isShown) {
+        .onChange(of: keyboardState.isShown) { _ in
             if !keyboardState.isShown && viewState == .search {
                 transitionToViewState(.row)
             }
@@ -175,7 +171,7 @@ struct ReactionSelectionView: View {
                 .textSelection(.disabled)
                 .opacity(0.01)
                 .allowsHitTesting(false)
-                .onChange(of: selectedEmoji) {
+                .onChange(of: selectedEmoji) { _ in
                     selectedEmoji = selectedEmoji.lastEmojiOrEmpty()
                     if !selectedEmoji.isEmpty {
                         transitionToViewState(.picked(selectedEmoji))
@@ -278,13 +274,13 @@ struct ReactionSelectionView: View {
             switch previousState {
             case .row:
                 Task {
-                    try await Task.sleep(for: .milliseconds(animationDuration * 1333))
+                    try await Task.sleep(nanoseconds: UInt64(animationDuration * 1_333_000_000))
                     reactionClosure(.emoji(emoji))
                 }
             case .search:
                 emojiEntryIsFocused = false
                 Task {
-                    try await Task.sleep(for: .milliseconds(animationDuration * 666))
+                    try await Task.sleep(nanoseconds: UInt64(animationDuration * 666_000_000))
                     reactionClosure(.emoji(selectedEmoji))
                 }
             case .initial, .picked:

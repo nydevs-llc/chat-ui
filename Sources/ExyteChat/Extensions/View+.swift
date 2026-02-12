@@ -32,6 +32,15 @@ extension View {
             self
         }
     }
+
+    @ViewBuilder
+    func scrollIndicatorsHidden() -> some View {
+        if #available(iOS 16.0, *) {
+            self.scrollIndicators(.hidden)
+        } else {
+            self
+        }
+    }
 }
 
 struct CustomDragGesture: ViewModifier {

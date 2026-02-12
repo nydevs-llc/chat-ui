@@ -3,7 +3,7 @@
 //
 
 import Foundation
-import ExyteMediaPicker
+// import ExyteMediaPicker  // Using MediaPickerFallback stubs
 
 public struct DraftMessage {
     public var id: String?
