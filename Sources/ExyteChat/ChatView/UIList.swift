@@ -7,6 +7,21 @@
 
 import SwiftUI
 
+/// UIHostingController subclass that forces a clear background from the earliest lifecycle point,
+/// preventing the default white `.systemBackground` flash on iOS 15.
+private class ClearHostingController<Content: View>: UIHostingController<Content> {
+    override func loadView() {
+        super.loadView()
+        view.backgroundColor = .clear
+        view.isOpaque = false
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+    }
+}
+
 struct UIList<MessageContent: View, InputView: View>: UIViewRepresentable {
 
     typealias MessageBuilderClosure = ChatView<MessageContent, InputView, DefaultMessageMenuAction>.MessageBuilderClosure
@@ -751,10 +766,8 @@ struct UIList<MessageContent: View, InputView: View>: UIViewRepresentable {
                     .minSize(width: 0, height: 0)
                     .margins(.all, 0)
             } else {
-                tableViewCell.contentView.subviews.forEach { $0.removeFromSuperview() }
                 tableViewCell.contentView.backgroundColor = .clear
-                let hc = UIHostingController(rootView: messageView)
-                hc.view.backgroundColor = .clear
+                let hc = ClearHostingController(rootView: messageView)
                 hc.view.translatesAutoresizingMaskIntoConstraints = false
                 tableViewCell.contentView.addSubview(hc.view)
                 NSLayoutConstraint.activate([
@@ -763,7 +776,7 @@ struct UIList<MessageContent: View, InputView: View>: UIViewRepresentable {
                     hc.view.leadingAnchor.constraint(equalTo: tableViewCell.contentView.leadingAnchor),
                     hc.view.trailingAnchor.constraint(equalTo: tableViewCell.contentView.trailingAnchor)
                 ])
-                hc.view.layoutIfNeeded()
+                tableViewCell.contentView.subviews.filter { $0 !== hc.view }.forEach { $0.removeFromSuperview() }
             }
 
             return tableViewCell
