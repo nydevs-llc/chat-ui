@@ -106,6 +106,7 @@ struct ReactionSelectionView: View {
                     if isCompact { Spacer(minLength: 0) }
                 }
                 .padding(.vertical, vPad)
+                .padding(.horizontal, !isCompact ? max(hPad, bubbleDiameter/2 + 6) : 0)
                 // Give the inner row a fixed box only in compact modes so Spacers can center content
                 .frame(
                     width: isCompact ? maxWidth : nil,
@@ -113,7 +114,6 @@ struct ReactionSelectionView: View {
                     alignment: .center
                 )
             }
-            .padding(.horizontal, !isCompact ? max(hPad, bubbleDiameter/2 + 6) : 0)
             .scrollIndicatorsHidden()
             .padding(.horizontal, isCompact ? 0 : 2)          // key: no extra inset in compact
             .modifier(InteriorRadialShadow(color: viewState.needsInteriorShadow ? backgroundColor : .clear))

@@ -212,8 +212,8 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
                     cell.contentConfiguration = UIHostingConfiguration { messageView }
                         .margins(.all, 0)
                 } else {
-                    // Fallback: embed via UIHostingController
                     cell.contentView.subviews.forEach { $0.removeFromSuperview() }
+                    cell.contentView.backgroundColor = .clear
                     let hc = UIHostingController(rootView: messageView)
                     hc.view.backgroundColor = .clear
                     hc.view.translatesAutoresizingMaskIntoConstraints = false
@@ -224,6 +224,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
                         hc.view.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor),
                         hc.view.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor)
                     ])
+                    hc.view.layoutIfNeeded()
                 }
 
                 cell.contentView.transform = self.invertT

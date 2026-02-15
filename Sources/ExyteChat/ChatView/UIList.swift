@@ -752,6 +752,7 @@ struct UIList<MessageContent: View, InputView: View>: UIViewRepresentable {
                     .margins(.all, 0)
             } else {
                 tableViewCell.contentView.subviews.forEach { $0.removeFromSuperview() }
+                tableViewCell.contentView.backgroundColor = .clear
                 let hc = UIHostingController(rootView: messageView)
                 hc.view.backgroundColor = .clear
                 hc.view.translatesAutoresizingMaskIntoConstraints = false
@@ -762,6 +763,7 @@ struct UIList<MessageContent: View, InputView: View>: UIViewRepresentable {
                     hc.view.leadingAnchor.constraint(equalTo: tableViewCell.contentView.leadingAnchor),
                     hc.view.trailingAnchor.constraint(equalTo: tableViewCell.contentView.trailingAnchor)
                 ])
+                hc.view.layoutIfNeeded()
             }
 
             return tableViewCell
