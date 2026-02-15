@@ -15,6 +15,8 @@ struct TextInputView: View {
     var style: InputViewStyle
     var availableInput: AvailableInputType
 
+    @State private var legacyTextHeight: CGFloat = 34
+
     var body: some View {
         Group {
             if #available(iOS 16.0, *) {
@@ -23,6 +25,7 @@ struct TextInputView: View {
             } else {
                 LegacyMultilineTextField(
                     text: $text,
+                    textHeight: $legacyTextHeight,
                     isFocused: Binding(
                         get: { globalFocusState.focus == .uuid(inputFieldId) },
                         set: { newValue in
@@ -36,7 +39,7 @@ struct TextInputView: View {
                     textColor: UIColor(style == .message ? theme.colors.textLightContext : theme.colors.textDarkContext),
                     font: .systemFont(ofSize: 17)
                 )
-                .fixedSize(horizontal: false, vertical: true)
+                .frame(height: legacyTextHeight)
             }
         }
         .placeholder(when: text.isEmpty) {
@@ -53,9 +56,11 @@ struct TextInputView: View {
 }
 
 // MARK: - iOS 15 multiline text field fallback
+// Approach from https://shadowfacts.net/2020/swiftui-expanding-text-view/
 
 private struct LegacyMultilineTextField: UIViewRepresentable {
     @Binding var text: String
+    @Binding var textHeight: CGFloat
     @Binding var isFocused: Bool
     var textColor: UIColor
     var font: UIFont
@@ -70,7 +75,6 @@ private struct LegacyMultilineTextField: UIViewRepresentable {
         tv.isScrollEnabled = false
         tv.delegate = context.coordinator
         tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        tv.setContentHuggingPriority(.required, for: .vertical)
         return tv
     }
 
@@ -85,31 +89,53 @@ private struct LegacyMultilineTextField: UIViewRepresentable {
         } else if !isFocused && tv.isFirstResponder {
             tv.resignFirstResponder()
         }
+
+        // Recalculate height after any update
+        recalculateHeight(tv)
+    }
+
+    private func recalculateHeight(_ tv: UITextView) {
+        let newSize = tv.sizeThatFits(CGSize(width: tv.frame.width, height: .greatestFiniteMagnitude))
+        let newHeight = max(newSize.height, font.lineHeight)
+        if textHeight != newHeight {
+            DispatchQueue.main.async {
+                textHeight = newHeight
+            }
+        }
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, isFocused: $isFocused)
+        Coordinator(text: $text, textHeight: $textHeight, font: font)
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {
         @Binding var text: String
-        @Binding var isFocused: Bool
+        @Binding var textHeight: CGFloat
+        let font: UIFont
 
-        init(text: Binding<String>, isFocused: Binding<Bool>) {
+        init(text: Binding<String>, textHeight: Binding<CGFloat>, font: UIFont) {
             _text = text
-            _isFocused = isFocused
+            _textHeight = textHeight
+            self.font = font
         }
 
         func textViewDidChange(_ textView: UITextView) {
             text = textView.text
+            let newSize = textView.sizeThatFits(
+                CGSize(width: textView.frame.width, height: .greatestFiniteMagnitude)
+            )
+            let newHeight = max(newSize.height, font.lineHeight)
+            if textHeight != newHeight {
+                textHeight = newHeight
+            }
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
-            isFocused = true
+            // isFocused is handled via the binding in updateUIView
         }
 
         func textViewDidEndEditing(_ textView: UITextView) {
-            isFocused = false
+            // isFocused is handled via the binding in updateUIView
         }
     }
 }
