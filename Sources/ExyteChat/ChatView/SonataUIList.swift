@@ -19,21 +19,6 @@ public extension Notification.Name {
     static let stopSharing = Notification.Name("stopSharing")
 }
 
-/// UIHostingController subclass that forces a clear background from the earliest lifecycle point,
-/// preventing the default white `.systemBackground` flash on iOS 15.
-private class ClearHostingController<Content: View>: UIHostingController<Content> {
-    override func loadView() {
-        super.loadView()
-        view.backgroundColor = .clear
-        view.isOpaque = false
-    }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = .clear
-    }
-}
-
 struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable {
 
     typealias MessageBuilderClosure =
@@ -227,19 +212,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
                     cell.contentConfiguration = UIHostingConfiguration { messageView }
                         .margins(.all, 0)
                 } else {
-                    cell.contentView.backgroundColor = .clear
-                    let hc = ClearHostingController(rootView: messageView)
-                    hc.view.translatesAutoresizingMaskIntoConstraints = false
-                    // Add new view BEFORE removing old ones — no empty frame gap
-                    cell.contentView.addSubview(hc.view)
-                    NSLayoutConstraint.activate([
-                        hc.view.topAnchor.constraint(equalTo: cell.contentView.topAnchor),
-                        hc.view.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor),
-                        hc.view.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor),
-                        hc.view.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor)
-                    ])
-                    // Remove previous hosted views after the new one is in place
-                    cell.contentView.subviews.filter { $0 !== hc.view }.forEach { $0.removeFromSuperview() }
+                    cell.contentConfiguration = UIHostingConfigurationBackport { messageView }
                 }
 
                 cell.contentView.transform = self.invertT

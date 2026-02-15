@@ -7,21 +7,6 @@
 
 import SwiftUI
 
-/// UIHostingController subclass that forces a clear background from the earliest lifecycle point,
-/// preventing the default white `.systemBackground` flash on iOS 15.
-private class ClearHostingController<Content: View>: UIHostingController<Content> {
-    override func loadView() {
-        super.loadView()
-        view.backgroundColor = .clear
-        view.isOpaque = false
-    }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = .clear
-    }
-}
-
 struct UIList<MessageContent: View, InputView: View>: UIViewRepresentable {
 
     typealias MessageBuilderClosure = ChatView<MessageContent, InputView, DefaultMessageMenuAction>.MessageBuilderClosure
@@ -766,17 +751,7 @@ struct UIList<MessageContent: View, InputView: View>: UIViewRepresentable {
                     .minSize(width: 0, height: 0)
                     .margins(.all, 0)
             } else {
-                tableViewCell.contentView.backgroundColor = .clear
-                let hc = ClearHostingController(rootView: messageView)
-                hc.view.translatesAutoresizingMaskIntoConstraints = false
-                tableViewCell.contentView.addSubview(hc.view)
-                NSLayoutConstraint.activate([
-                    hc.view.topAnchor.constraint(equalTo: tableViewCell.contentView.topAnchor),
-                    hc.view.bottomAnchor.constraint(equalTo: tableViewCell.contentView.bottomAnchor),
-                    hc.view.leadingAnchor.constraint(equalTo: tableViewCell.contentView.leadingAnchor),
-                    hc.view.trailingAnchor.constraint(equalTo: tableViewCell.contentView.trailingAnchor)
-                ])
-                tableViewCell.contentView.subviews.filter { $0 !== hc.view }.forEach { $0.removeFromSuperview() }
+                tableViewCell.contentConfiguration = UIHostingConfigurationBackport { messageView }
             }
 
             return tableViewCell

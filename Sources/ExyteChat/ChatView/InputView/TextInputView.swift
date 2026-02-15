@@ -36,6 +36,7 @@ struct TextInputView: View {
                     textColor: UIColor(style == .message ? theme.colors.textLightContext : theme.colors.textDarkContext),
                     font: .systemFont(ofSize: 17)
                 )
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
         .placeholder(when: text.isEmpty) {
@@ -69,6 +70,7 @@ private struct LegacyMultilineTextField: UIViewRepresentable {
         tv.isScrollEnabled = false
         tv.delegate = context.coordinator
         tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        tv.setContentHuggingPriority(.required, for: .vertical)
         return tv
     }
 
