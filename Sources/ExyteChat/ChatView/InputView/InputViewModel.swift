@@ -105,6 +105,10 @@ final class InputViewModel: ObservableObject {
         case .stopRecordAudio:
             recorder.stopRecording()
             if let _ = attachments.recording {
+                if let oggUrl = recorder.convertLastRecordingToOGG() {
+                    attachments.recording?.url = oggUrl
+                    attachments.recording?.mimeType = "audio/ogg"
+                }
                 state = .hasRecording
             }
             recordingPlayer?.reset()

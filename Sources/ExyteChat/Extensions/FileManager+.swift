@@ -20,4 +20,8 @@ extension FileManager {
     static var tempAudioFile: URL {
         FileManager.tempDirPath.appendingPathComponent(UUID().uuidString + ".m4a")
     }
+
+    static var tempOggFile: URL {
+        FileManager.tempDirPath.appendingPathComponent(UUID().uuidString + ".ogg")
+    }
 }

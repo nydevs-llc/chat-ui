@@ -1,12 +1,13 @@
 //
 //  Recorder.swift
-//  
+//
 //
 //  Created by Alisa Mylnikova on 09.03.2023.
 //
 
 import Foundation
 import AVFoundation
+import SwiftOGG
 
 final class Recorder {
 
@@ -18,6 +19,7 @@ final class Recorder {
     private var audioTimer: Timer?
 
     private var soundSamples: [CGFloat] = []
+    private var m4aRecordingUrl: URL?
 
     var isAllowedToRecordAudio: Bool {
         audioSession.recordPermission == .granted
@@ -42,13 +44,14 @@ final class Recorder {
     private func startRecordingInternal(_ durationProgressHandler: @escaping ProgressHandler) -> URL? {
         let settings = [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 12000,
+            AVSampleRateKey: 48000,
             AVNumberOfChannelsKey: 1,
             AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
         ]
 
         soundSamples = []
         let recordingUrl = FileManager.tempAudioFile
+        m4aRecordingUrl = recordingUrl
 
         do {
             try audioSession.setCategory(.record, mode: .default)
@@ -59,7 +62,7 @@ final class Recorder {
             durationProgressHandler(0.0, [])
 
             NotificationCenter.default.post(name: .recordingStarted, object: self)
-            
+
             DispatchQueue.main.async { [weak self] in
                 self?.audioTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
                     self?.onTimer(durationProgressHandler)
@@ -91,6 +94,22 @@ final class Recorder {
         audioTimer?.invalidate()
         audioTimer = nil
         NotificationCenter.default.post(name: .recordingStopped, object: self)
+    }
+
+    /// Converts the last recorded m4a file to Opus/OGG format.
+    /// Returns the OGG file URL on success, nil on failure.
+    func convertLastRecordingToOGG() -> URL? {
+        guard let m4aUrl = m4aRecordingUrl else { return nil }
+        let oggUrl = FileManager.tempOggFile
+        do {
+            try OGGConverter.convertM4aFileToOpusOGG(src: m4aUrl, dest: oggUrl)
+            try? FileManager.default.removeItem(at: m4aUrl)
+            m4aRecordingUrl = nil
+            return oggUrl
+        } catch {
+            print("OGG conversion failed: \(error.localizedDescription)")
+            return nil
+        }
     }
 }
 

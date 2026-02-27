@@ -7,6 +7,7 @@
 
 import Combine
 import AVFoundation
+import SwiftOGG
 
 final class RecordingPlayer: ObservableObject {
     
@@ -24,6 +25,7 @@ final class RecordingPlayer: ObservableObject {
     private var timeObserver: Any?
     private var loaderDelegate: CryptoResourceLoaderDelegate?
     private var cancellables = Set<AnyCancellable>()
+    private var oggToM4aCache: [URL: URL] = [:]
     
     // MARK: - Public Methods
     
@@ -72,10 +74,12 @@ final class RecordingPlayer: ObservableObject {
         NotificationCenter.default.removeObserver(self)
         timeObserver = nil
         player?.replaceCurrentItem(with: nil)
-        
+
+        let playbackUrl = convertOGGIfNeeded(url)
         let playerItem: AVPlayerItem
-        
+
         if let mimeType = recording?.mimeType,
+           mimeType != "audio/ogg",
            let recording,
            let key = recording.key,
            let iv = recording.iv,
@@ -85,29 +89,23 @@ final class RecordingPlayer: ObservableObject {
                 url: url,
                 key: key,
                 iv: iv)
-            
+
             self.loaderDelegate = loaderDelegate
-            
+
             let asset = AVURLAsset(url: loaderDelegate.localStreamingURL, options: [
                 "AVURLAssetOutOfBandMIMETypeKey": mimeType
             ])
-            
+
             asset.resourceLoader.setDelegate(
                 loaderDelegate,
                 queue: DispatchQueue.main
             )
-            
-            playerItem = AVPlayerItem(asset: asset)
-        } else if let mimeType = recording?.mimeType {
-            let asset = AVURLAsset(url: url, options: [
-                "AVURLAssetOutOfBandMIMETypeKey": mimeType
-            ])
-            
+
             playerItem = AVPlayerItem(asset: asset)
         } else {
-            playerItem = AVPlayerItem(url: url)
+            playerItem = AVPlayerItem(url: playbackUrl)
         }
-        
+
         player = AVPlayer(playerItem: playerItem)
         
         playerItem.publisher(for: \.status)
@@ -130,6 +128,26 @@ final class RecordingPlayer: ObservableObject {
         setupNotificationCenterObservers(for: playerItem)
     }
     
+    private func convertOGGIfNeeded(_ url: URL) -> URL {
+        guard url.pathExtension.lowercased() == "ogg" ||
+              recording?.mimeType == "audio/ogg" else {
+            return url
+        }
+        if let cached = oggToM4aCache[url] {
+            return cached
+        }
+        let m4aUrl = FileManager.tempDirPath
+            .appendingPathComponent(UUID().uuidString + ".m4a")
+        do {
+            try OGGConverter.convertOpusOGGToM4aFile(src: url, dest: m4aUrl)
+            oggToM4aCache[url] = m4aUrl
+            return m4aUrl
+        } catch {
+            print("OGG to M4A conversion failed: \(error.localizedDescription)")
+            return url
+        }
+    }
+
     private func setupTimeObserver() {
         timeObserver = player?.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.2, preferredTimescale: 10),

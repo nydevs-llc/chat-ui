@@ -26,6 +26,10 @@ let package = Package(
         .package(
             url: "https://github.com/kean/Nuke.git",
             from: "12.0.0"
+        ),
+        .package(
+            url: "https://github.com/element-hq/swift-ogg.git",
+            from: "0.0.3"
         )
     ],
     targets: [
@@ -35,6 +39,7 @@ let package = Package(
                 // .product(name: "ExyteMediaPicker", package: "MediaPicker"),
                 .product(name: "FloatingButton", package: "FloatingButton"),
                 .product(name: "NukeUI", package: "Nuke"),
+                .product(name: "SwiftOGG", package: "swift-ogg"),
             ]
         ),
         .testTarget(
