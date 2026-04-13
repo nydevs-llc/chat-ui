@@ -35,6 +35,7 @@ public struct MessageMarkdownView: View {
             anyLinkColor: theme.colors.anyLink,
             darkLinkColor: theme.colors.darkLink,
             isDeleted: isDeleted,
+            isStreaming: message.isStreaming,
             onMentionTap: onMentionTap
         )
         .allowsHitTesting(false)

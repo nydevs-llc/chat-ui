@@ -77,7 +77,8 @@ public struct Message: Identifiable, Hashable {
     public var isDeleted: Bool
     public var publicationAttachment: MessagePublicationAttachment?
     public var triggerRedraw: UUID?
-    
+    public var isStreaming: Bool
+
     public var type: MessageType
 
     public init(id: String,
@@ -92,7 +93,8 @@ public struct Message: Identifiable, Hashable {
                 type: MessageType = .text,
                 isEncrypted: Bool = false,
                 isDeleted: Bool = false,
-                publicationAttachment: MessagePublicationAttachment? = nil) {
+                publicationAttachment: MessagePublicationAttachment? = nil,
+                isStreaming: Bool = false) {
 
         self.id = id
         self.user = user
@@ -107,6 +109,7 @@ public struct Message: Identifiable, Hashable {
         self.isEncrypted = isEncrypted
         self.isDeleted = isDeleted
         self.publicationAttachment = publicationAttachment
+        self.isStreaming = isStreaming
     }
 
     public static func makeMessage(
@@ -150,7 +153,9 @@ extension Message: Equatable {
         lhs.attachments == rhs.attachments &&
         lhs.reactions == rhs.reactions &&
         lhs.recording == rhs.recording &&
-        lhs.replyMessage == rhs.replyMessage
+        lhs.replyMessage == rhs.replyMessage &&
+        lhs.isStreaming == rhs.isStreaming &&
+        lhs.triggerRedraw == rhs.triggerRedraw
     }
 }
 

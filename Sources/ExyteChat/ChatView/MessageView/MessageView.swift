@@ -210,6 +210,7 @@ struct MessageView: View {
                     anyLinkColor: theme.colors.textMyReply,
                     darkLinkColor: theme.colors.darkLink,
                     isDeleted: message.isDeleted,
+                    isStreaming: message.isStreaming,
                     onMentionTap: { id in
                         if let user = groupUsers.first(where: {
                             $0.id.components(separatedBy: "@").first == id
@@ -284,6 +285,7 @@ struct MessageView: View {
                 anyLinkColor: theme.colors.anyLink,
                 darkLinkColor: theme.colors.darkLink,
                 isDeleted: message.isDeleted,
+                isStreaming: message.isStreaming,
                 onMentionTap: { id in
                     if let user = groupUsers.first(where: { $0.id.components(separatedBy: "@").first == id }) {
                         tapAvatarClosure?(user, message.id)

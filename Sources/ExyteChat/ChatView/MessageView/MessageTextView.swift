@@ -14,6 +14,7 @@ struct MessageTextView: View {
     let anyLinkColor: Color
     let darkLinkColor: Color
     let isDeleted: Bool
+    let isStreaming: Bool
     let onMentionTap: ((String) -> Void)?
 
     @State private var showLinkOptions = false
@@ -35,6 +36,7 @@ struct MessageTextView: View {
         anyLinkColor: Color,
         darkLinkColor: Color,
         isDeleted: Bool,
+        isStreaming: Bool = false,
         onMentionTap: ((String) -> Void)?
     ) {
         self.text = text
@@ -43,6 +45,7 @@ struct MessageTextView: View {
         self.anyLinkColor = anyLinkColor
         self.darkLinkColor = darkLinkColor
         self.isDeleted = isDeleted
+        self.isStreaming = isStreaming
         self.onMentionTap = onMentionTap
 
         let font = Self.makeBaseUIFont(isDeleted: isDeleted)
@@ -65,18 +68,23 @@ struct MessageTextView: View {
     var body: some View {
         Group {
             if let text = text, !text.isEmpty {
-                contentView(for: text)
-                    .confirmationDialog(
-                        dialogTitle(),
-                        isPresented: $showLinkOptions,
-                        titleVisibility: .visible
-                    ) {
-                        ForEach(linkOptions) { option in
-                            Button(option.displayName) { _ = handleLinkTap(option.url) }
-                        }
-                        Button("Скасувати", role: .cancel) { }
+                HStack(alignment: .lastTextBaseline, spacing: 0) {
+                    contentView(for: text)
+                    if isStreaming {
+                        StreamingCursorView()
                     }
-                    .animation(nil, value: computedAttributed)
+                }
+                .confirmationDialog(
+                    dialogTitle(),
+                    isPresented: $showLinkOptions,
+                    titleVisibility: .visible
+                ) {
+                    ForEach(linkOptions) { option in
+                        Button(option.displayName) { _ = handleLinkTap(option.url) }
+                    }
+                    Button("Скасувати", role: .cancel) { }
+                }
+                .animation(nil, value: computedAttributed)
             }
         }
     }
@@ -171,6 +179,17 @@ extension MessageTextView {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .background(Color.clear)
+    }
+}
+
+private struct StreamingCursorView: View {
+    @State private var isVisible = true
+
+    var body: some View {
+        Text("▌")
+            .opacity(isVisible ? 1 : 0)
+            .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: isVisible)
+            .onAppear { isVisible = false }
     }
 }
 
