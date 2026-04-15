@@ -45,13 +45,16 @@ public struct ChatTheme {
     public struct Strings {
         public var editingTitle: String
         public var replyToTitle: (String) -> String
+        public var inputPlaceholder: String
 
         public init(
             editingTitle: String = "Editing",
-            replyToTitle: @escaping (String) -> String = { name in "Reply to \(name)" }
+            replyToTitle: @escaping (String) -> String = { name in "Reply to \(name)" },
+            inputPlaceholder: String = "Message"
         ) {
             self.editingTitle = editingTitle
             self.replyToTitle = replyToTitle
+            self.inputPlaceholder = inputPlaceholder
         }
     }
 

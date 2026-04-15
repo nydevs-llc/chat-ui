@@ -17,6 +17,13 @@ struct TextInputView: View {
 
     @State private var legacyTextHeight: CGFloat = 34
 
+    private var placeholderText: String {
+        switch style {
+        case .message: return theme.strings.inputPlaceholder
+        case .signature: return ""
+        }
+    }
+
     var body: some View {
         Group {
             if #available(iOS 16.0, *) {
@@ -43,7 +50,7 @@ struct TextInputView: View {
             }
         }
         .placeholder(when: text.isEmpty) {
-            Text(style.placeholder)
+            Text(placeholderText)
                 .foregroundColor(theme.colors.buttonBackground)
         }
         .foregroundColor(style == .message ? theme.colors.textLightContext : theme.colors.textDarkContext)
