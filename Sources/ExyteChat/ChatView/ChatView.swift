@@ -334,7 +334,7 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
     }
 
     var mainView: some View {
-        VStack {
+        VStack(spacing: 0) {
 
             if isListAboveInputView {
                 listWithButton
