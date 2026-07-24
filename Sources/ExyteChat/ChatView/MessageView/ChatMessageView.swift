@@ -33,31 +33,42 @@ struct ChatMessageView<MessageContent: View>: View {
         Group {
             switch row.message.type {
             case .text, .file, .url, .document, .geo:
-                MessageView(
-                    viewModel: viewModel,
-                    message: row.message,
-                    positionInUserGroup: row.positionInUserGroup,
-                    positionInMessagesSection: row.positionInMessagesSection,
-                    chatType: chatType,
-                    avatarSize: avatarSize,
-                    tapAvatarClosure: tapAvatarClosure,
-                    messageUseMarkdown: messageUseMarkdown,
-                    isDisplayingMessageMenu: isDisplayingMessageMenu,
-                    showMessageTimeView: showMessageTimeView,
-                    isGroup: showAvatar,
-                    tapDocumentClosure: tapDocumentClosure,
-                    groupUsers: groupUsers,
-                    font: messageFont
-                )
-                // .applyIf(shouldEnableReplyGesture(for: row.message)) {
-                //     $0.onReplyGesture(replySymbolColor: theme.colors.myMessage) {
-                //         viewModel.messageMenuActionInternal(
-                //             message: row.message,
-                //             action: DefaultMessageMenuAction.reply
-                //         )
-                //     }
-                // }
-                
+                // Кастомный `messageBuilder`, когда задан потребителем, рендерит и
+                // текстовые типы — а не только `.call/.status`. Иначе редизайн-пузырь
+                // (свои цвета/форма/статусы) не применялся к обычным сообщениям, и
+                // работал лишь дефолтный `MessageView` с цветами из темы. Fallback —
+                // штатный `MessageView`, если билдер не передан.
+                if let messageBuilder {
+                    messageBuilder(
+                        row.message,
+                        row.positionInUserGroup,
+                        row.positionInMessagesSection,
+                        row.commentsPosition,
+                        { viewModel.messageMenuRow = row },
+                        viewModel.messageMenuAction()
+                    ) { attachment in
+                        viewModel.presentAttachmentFullScreen(attachment)
+                    }
+                    .id(row.message.id)
+                } else {
+                    MessageView(
+                        viewModel: viewModel,
+                        message: row.message,
+                        positionInUserGroup: row.positionInUserGroup,
+                        positionInMessagesSection: row.positionInMessagesSection,
+                        chatType: chatType,
+                        avatarSize: avatarSize,
+                        tapAvatarClosure: tapAvatarClosure,
+                        messageUseMarkdown: messageUseMarkdown,
+                        isDisplayingMessageMenu: isDisplayingMessageMenu,
+                        showMessageTimeView: showMessageTimeView,
+                        isGroup: showAvatar,
+                        tapDocumentClosure: tapDocumentClosure,
+                        groupUsers: groupUsers,
+                        font: messageFont
+                    )
+                }
+
             case .call, .status:
                 if let messageBuilder {
                     messageBuilder(
