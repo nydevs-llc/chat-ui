@@ -74,6 +74,11 @@ public struct ChatTheme {
         public var myMessage: Color
         public var friendMessage: Color
 
+        /// Опциональный градиент фона исходящего пузыря. Если задан — рисуется
+        /// вместо сплошного `myMessage` + захардкоженных overlay-градиентов
+        /// (тема-драйвен; nil = прежнее поведение, обратная совместимость).
+        public var myMessageGradient: LinearGradient?
+
         public var textLightContext: Color
         public var textDarkContext: Color
         public var textMediaPicker: Color
@@ -102,6 +107,7 @@ public struct ChatTheme {
             messageMenuBackground: Color = Color.white,
             myMessage: Color = Color(hex: "4962FF"),
             friendMessage: Color = Color(hex: "EBEDF0"),
+            myMessageGradient: LinearGradient? = nil,
             textLightContext: Color = Color.black,
             textDarkContext: Color = Color.white,
             textMediaPicker: Color = Color(hex: "818C99"),
@@ -136,6 +142,7 @@ public struct ChatTheme {
             self.timeCapsuleForeground = timeCapsuleForeground
             self.anyLink = anyLink
             self.darkLink = darkLink
+            self.myMessageGradient = myMessageGradient
         }
     }
 

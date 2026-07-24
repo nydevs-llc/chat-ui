@@ -348,6 +348,13 @@ public extension View {
             .background {
                 if isReply || !message.text.isEmpty || message.recording != nil {
                     if message.user.isCurrentUser && !isReply {
+                        if let myMessageGradient = theme.colors.myMessageGradient {
+                            // Тема-драйвен градиент исходящего пузыря (дизайн-макет).
+                            // Задан из аппа → чистый градиент вместо сплошного
+                            // myMessage + двух захардкоженных overlay-градиентов.
+                            RoundedRectangle(cornerRadius: radius)
+                                .fill(myMessageGradient)
+                        } else {
                         ZStack {
                             // Base color
                             RoundedRectangle(cornerRadius: radius)
@@ -377,6 +384,7 @@ public extension View {
                                         endPoint: .bottom
                                     )
                                 )
+                        }
                         }
                     } else {
                         RoundedRectangle(cornerRadius: radius)
