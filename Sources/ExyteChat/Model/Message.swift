@@ -76,6 +76,7 @@ public struct Message: Identifiable, Hashable {
     public var isEncrypted: Bool
     public var isDeleted: Bool
     public var publicationAttachment: MessagePublicationAttachment?
+    public var secretAttachment: MessageSecretAttachment?
     public var triggerRedraw: UUID?
     public var isStreaming: Bool
 
@@ -94,6 +95,7 @@ public struct Message: Identifiable, Hashable {
                 isEncrypted: Bool = false,
                 isDeleted: Bool = false,
                 publicationAttachment: MessagePublicationAttachment? = nil,
+                secretAttachment: MessageSecretAttachment? = nil,
                 isStreaming: Bool = false) {
 
         self.id = id
@@ -109,6 +111,7 @@ public struct Message: Identifiable, Hashable {
         self.isEncrypted = isEncrypted
         self.isDeleted = isDeleted
         self.publicationAttachment = publicationAttachment
+        self.secretAttachment = secretAttachment
         self.isStreaming = isStreaming
     }
 
