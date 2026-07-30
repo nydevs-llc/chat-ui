@@ -158,7 +158,29 @@ extension Message: Equatable {
         lhs.recording == rhs.recording &&
         lhs.replyMessage == rhs.replyMessage &&
         lhs.isStreaming == rhs.isStreaming &&
-        lhs.triggerRedraw == rhs.triggerRedraw
+        lhs.triggerRedraw == rhs.triggerRedraw &&
+        lhs.publicationAttachment == rhs.publicationAttachment &&
+        lhs.secretAttachment == rhs.secretAttachment
+    }
+
+    // `hash` задан явно и зеркалит `==`. Синтезированный вариант брал ВСЕ хранимые
+    // поля, включая те, что `==` игнорирует (`type`, `isDeleted`, `isEncrypted`), —
+    // то есть равные по `==` сообщения могли иметь разные хеши, что нарушает
+    // контракт Hashable. Правило: поле, добавленное в `==`, добавляется и сюда.
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(user)
+        hasher.combine(status)
+        hasher.combine(createdAt)
+        hasher.combine(text)
+        hasher.combine(attachments)
+        hasher.combine(reactions)
+        hasher.combine(recording)
+        hasher.combine(replyMessage)
+        hasher.combine(isStreaming)
+        hasher.combine(triggerRedraw)
+        hasher.combine(publicationAttachment)
+        hasher.combine(secretAttachment)
     }
 }
 

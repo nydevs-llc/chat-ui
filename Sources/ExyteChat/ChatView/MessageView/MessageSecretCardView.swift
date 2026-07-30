@@ -142,27 +142,40 @@ struct MessageSecretCardView: View {
 // MARK: - Voice
 
 /// Плеер не собственный: переиспользуем `RecordWaveformWithButtons`, которым уже
-/// рисуются голосовые сообщения. Резолв короткоживущего URL — за приложением,
-/// поэтому тап делегируется через `onPlay(fileId)`.
+/// рисуются голосовые сообщения.
+///
+/// Два состояния, разделённые ровно наличием транзиентного `voice.url`:
+/// - `url == nil` — ссылка ещё не резолвнута: тап уходит в приложение через
+///   `onPlay(fileId)`, форк сам ничего не проигрывает (он не знает про файловый сервис).
+/// - `url != nil` — приложение вернуло короткоживущую ссылку: играем штатным
+///   путём, тем же, которым играют обычные голосовые, — с прогрессом волны.
 struct SecretVoicePill: View {
 
     let voice: MessageSecretAttachment.Voice
     let onPlay: ((String) -> Void)?
 
+    private static let buttonColor = Color(red: 75 / 255, green: 51 / 255, blue: 182 / 255)
+
     private var recording: Recording {
         Recording(
             duration: Double(voice.durationMs) / 1000,
-            waveformSamples: voice.waveform.map { CGFloat($0) }
+            waveformSamples: voice.waveform.map { CGFloat($0) },
+            url: voice.url
         )
     }
 
     var body: some View {
         RecordWaveformWithButtons(
             recording: recording,
-            colorButton: Color(red: 75 / 255, green: 51 / 255, blue: 182 / 255),
+            colorButton: Self.buttonColor,
             colorButtonBg: .white,
             colorWaveform: .white,
-            onPlayTap: { onPlay?(voice.fileId) }
+            // Ссылки ещё нет — тап только просит приложение её резолвнуть.
+            // Как только `url` придёт, override снимается и работает штатный плеер.
+            onPlayTap: voice.url == nil ? { onPlay?(voice.fileId) } : nil
         )
+        // Пересоздавать вью по смене URL не нужно и вредно: `RecordingPlayer.togglePlay`
+        // сам замечает новый `recording.url`, а смена identity убила бы уже идущее
+        // воспроизведение, если приложение перевыпустит протухшую ссылку.
     }
 }
