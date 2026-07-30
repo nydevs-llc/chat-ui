@@ -40,6 +40,17 @@ struct MessageView: View {
     static let horizontalStatusPadding: CGFloat = 8
     static let horizontalBubblePadding: CGFloat = 70
 
+    // Композиция «ответ на секрет» (макет)
+    static let secretCardWidth: CGFloat = 236
+    /// На сколько пузырь ответа подвёрнут под нижнюю границу карточки.
+    static let secretReplyTuck: CGFloat = 22
+    /// #FFCB52
+    static let secretReplyOutgoingTop = Color(red: 255 / 255, green: 203 / 255, blue: 82 / 255)
+    /// #F0982B
+    static let secretReplyOutgoingBottom = Color(red: 240 / 255, green: 152 / 255, blue: 43 / 255)
+    /// #3A2606
+    static let secretReplyOutgoingText = Color(red: 58 / 255, green: 38 / 255, blue: 6 / 255)
+
     var font: UIFont
 
     enum DateArrangement {
@@ -124,8 +135,22 @@ struct MessageView: View {
         .frame(maxWidth: UIScreen.main.bounds.width, alignment: message.user.isCurrentUser ? .trailing : .leading)
     }
 
+    /// Единственная развилка: вложение секрета рисуется собственной композицией
+    /// (карточка сама себе фон + пузырь ответа ПОВЕРХ неё с выходом за границу),
+    /// потому что штатный `bubbleView` складывает содержимое вертикально ВНУТРИ
+    /// подложки пузыря. Все остальные типы сообщений идут прежним путём —
+    /// тело `standardBubbleView` перенесено без единого изменения.
     @ViewBuilder
     func bubbleView(_ message: Message) -> some View {
+        if let secret = message.secretAttachment {
+            secretComposition(message, secret)
+        } else {
+            standardBubbleView(message)
+        }
+    }
+
+    @ViewBuilder
+    private func standardBubbleView(_ message: Message) -> some View {
         VStack(
             alignment: message.user.isCurrentUser ? .leading : .trailing,
             spacing: -bubbleSize.height / 3
@@ -188,7 +213,105 @@ struct MessageView: View {
             $0.frameGetter($viewModel.messageFrame)
         }
     }
-    
+
+    // MARK: - Secret attachment
+
+    /// Карточка секрета + подвёрнутый снизу пузырь ответа. Пузырь лежит ПОВЕРХ
+    /// карточки и выходит за её левую (входящее) или правую (исходящее) границу.
+    /// Штатная подложка `bubbleBackground` здесь не применяется — карточка сама
+    /// себе фон.
+    @ViewBuilder
+    private func secretComposition(_ message: Message, _ secret: MessageSecretAttachment) -> some View {
+        VStack(
+            alignment: message.user.isCurrentUser ? .leading : .trailing,
+            spacing: 0
+        ) {
+            ZStack(alignment: .bottom) {
+                MessageSecretCardView(
+                    attachment: secret,
+                    isOutgoing: message.user.isCurrentUser
+                )
+                .padding(.bottom, MessageView.secretReplyTuck)
+
+                if !message.text.isEmpty {
+                    // Ширина строки = ширина карточки: пузырь обжимает свой текст
+                    // (Spacer добирает остаток), но перенос считается по 236pt,
+                    // а не по всей доступной ширине экрана.
+                    HStack(spacing: 0) {
+                        if message.user.isCurrentUser { Spacer(minLength: 0) }
+                        secretReplyBubble(message)
+                        if !message.user.isCurrentUser { Spacer(minLength: 0) }
+                    }
+                    .frame(width: MessageView.secretCardWidth)
+                    .offset(x: message.user.isCurrentUser ? 6 : -6)
+                }
+            }
+            .zIndex(0)
+
+            if !isDisplayingMessageMenu && !message.reactions.isEmpty && !message.isDeleted {
+                reactionsView(message)
+                    .zIndex(1)
+            }
+        }
+        .applyIf(isDisplayingMessageMenu) {
+            $0.frameGetter($viewModel.messageFrame)
+        }
+    }
+
+    @ViewBuilder
+    private func secretReplyBubble(_ message: Message) -> some View {
+        HStack(alignment: .lastTextBaseline, spacing: 8) {
+            Text(message.text)
+                .font(Font(font))
+                .foregroundColor(
+                    message.user.isCurrentUser
+                        ? MessageView.secretReplyOutgoingText
+                        : theme.colors.textLightContext
+                )
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Статус рисуем напрямую, а не через `messageTimeView()`: на оранжевой
+            // заливке нужен тёмный набор цветов из макета, а не `myMessageTime` темы.
+            if message.user.isCurrentUser, let status = message.status {
+                MessageStatusView(
+                    status: status,
+                    needsCapsule: false,
+                    colorSet: MessageStatusColorSet(
+                        sending: MessageView.secretReplyOutgoingText.opacity(0.5),
+                        sent: MessageView.secretReplyOutgoingText.opacity(0.5),
+                        received: MessageView.secretReplyOutgoingText.opacity(0.5),
+                        read: MessageView.secretReplyOutgoingText.opacity(0.5)
+                    ),
+                    onRetry: {
+                        if case let .error(draft) = status {
+                            viewModel.sendMessage(draft)
+                        }
+                    }
+                )
+                .alignmentGuide(.lastTextBaseline) { d in d[.bottom] }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(secretReplyBubbleFill(message))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func secretReplyBubbleFill(_ message: Message) -> some View {
+        if message.user.isCurrentUser {
+            // Оранжевый градиент исходящего пузыря ответа на секрет (макет).
+            LinearGradient(
+                colors: [MessageView.secretReplyOutgoingTop, MessageView.secretReplyOutgoingBottom],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        } else {
+            theme.colors.friendMessage
+        }
+    }
+
     @ViewBuilder
     func replyBubbleView(_ message: Message) -> some View {
         VStack(alignment: .leading, spacing: 0) {

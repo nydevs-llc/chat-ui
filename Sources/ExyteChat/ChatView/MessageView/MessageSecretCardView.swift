@@ -1,0 +1,168 @@
+//
+//  MessageSecretCardView.swift
+//  Chat
+//
+//  Карточка-цитата секрета: вопрос + ответ владельца анкеты (текст или голос).
+//  Карточка одинакова для входящего и исходящего — это цитата ЧУЖОГО секрета
+//  в обе стороны; зеркалится только пузырь ответа поверх неё (см. MessageView).
+//
+
+import SwiftUI
+
+struct MessageSecretCardView: View {
+
+    let attachment: MessageSecretAttachment
+    /// Не влияет на оформление карточки (она одинакова в обе стороны) — оставлен
+    /// в сигнатуре как контекст композиции и точка расширения.
+    let isOutgoing: Bool
+
+    // MARK: - Layout
+
+    private enum Layout {
+        static let width: CGFloat = 236
+        static let corner: CGFloat = 24
+        static let padding: CGFloat = 24
+        static let answerLineLimit: Int = 4
+        static let accentLineWidth: CGFloat = 4
+        static let dividerWidth: CGFloat = 88
+        static let dividerHeight: CGFloat = 4
+        static let quoteFontSize: CGFloat = 56
+    }
+
+    // MARK: - Colors (макет «Ответ на секрет»)
+
+    /// #6A4CE0
+    private static let gradientTop = Color(red: 106 / 255, green: 76 / 255, blue: 224 / 255)
+    /// #4B33B6
+    private static let gradientMid = Color(red: 75 / 255, green: 51 / 255, blue: 182 / 255)
+    /// #2E2185
+    private static let gradientBottom = Color(red: 46 / 255, green: 33 / 255, blue: 133 / 255)
+    /// #C9BCF2
+    private static let questionColor = Color(red: 201 / 255, green: 188 / 255, blue: 242 / 255)
+    /// #B79BFF
+    private static let accentLineColor = Color(red: 183 / 255, green: 155 / 255, blue: 255 / 255)
+    /// #8B6BFF
+    private static let dividerColor = Color(red: 139 / 255, green: 107 / 255, blue: 255 / 255)
+
+    // MARK: - Body
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 12) {
+                RoundedRectangle(cornerRadius: Layout.accentLineWidth / 2)
+                    .fill(Self.accentLineColor)
+                    .frame(width: Layout.accentLineWidth)
+
+                Text(attachment.question)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(Self.questionColor)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+
+            RoundedRectangle(cornerRadius: Layout.dividerHeight / 2)
+                .fill(Self.dividerColor)
+                .frame(width: Layout.dividerWidth, height: Layout.dividerHeight)
+                .padding(.top, 14)
+                .padding(.leading, 16)
+
+            content
+                .padding(.top, 18)
+        }
+        .padding(Layout.padding)
+        .frame(width: Layout.width, alignment: .leading)
+        .background(cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: Layout.corner, style: .continuous))
+    }
+
+    // MARK: - Content
+
+    /// Правило контента: голос вытесняет курсивную цитату.
+    @ViewBuilder
+    private var content: some View {
+        if let voice = attachment.voice {
+            SecretVoicePill(voice: voice, onPlay: attachment.onPlay)
+        } else if let answer = attachment.answer, !answer.isEmpty {
+            Text(answer)
+                .font(.custom("Times New Roman", size: 20).italic())
+                .foregroundColor(.white)
+                .lineLimit(Layout.answerLineLimit)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // MARK: - Background
+
+    private var cardBackground: some View {
+        ZStack {
+            // 158° из макета: направление (sin158°, cos158°) в экранных координатах.
+            LinearGradient(
+                colors: [Self.gradientTop, Self.gradientMid, Self.gradientBottom],
+                startPoint: UnitPoint(x: 0.313, y: 0.036),
+                endPoint: UnitPoint(x: 0.687, y: 0.964)
+            )
+
+            RadialGradient(
+                colors: [Color.white.opacity(0.18), Color.white.opacity(0)],
+                center: UnitPoint(x: 0.5, y: 0),
+                startRadius: 0,
+                endRadius: Layout.width * 0.85
+            )
+
+            decorativeQuotes
+        }
+    }
+
+    /// Кавычки Georgia 10% белого: верхняя слева, нижняя справа повёрнута на 180°.
+    private var decorativeQuotes: some View {
+        ZStack {
+            Text(verbatim: "\u{201C}")
+                .font(.custom("Georgia", size: Layout.quoteFontSize))
+                .foregroundColor(Color.white.opacity(0.1))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.leading, 10)
+                .padding(.top, -4)
+
+            Text(verbatim: "\u{201C}")
+                .font(.custom("Georgia", size: Layout.quoteFontSize))
+                .foregroundColor(Color.white.opacity(0.1))
+                .rotationEffect(.degrees(180))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .padding(.trailing, 10)
+                .padding(.bottom, -4)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+// MARK: - Voice
+
+/// Плеер не собственный: переиспользуем `RecordWaveformWithButtons`, которым уже
+/// рисуются голосовые сообщения. Резолв короткоживущего URL — за приложением,
+/// поэтому тап делегируется через `onPlay(fileId)`.
+struct SecretVoicePill: View {
+
+    let voice: MessageSecretAttachment.Voice
+    let onPlay: ((String) -> Void)?
+
+    private var recording: Recording {
+        Recording(
+            duration: Double(voice.durationMs) / 1000,
+            waveformSamples: voice.waveform.map { CGFloat($0) }
+        )
+    }
+
+    var body: some View {
+        RecordWaveformWithButtons(
+            recording: recording,
+            colorButton: Color(red: 75 / 255, green: 51 / 255, blue: 182 / 255),
+            colorButtonBg: .white,
+            colorWaveform: .white,
+            onPlayTap: { onPlay?(voice.fileId) }
+        )
+    }
+}

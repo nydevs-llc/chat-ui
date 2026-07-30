@@ -18,6 +18,10 @@ struct RecordWaveformWithButtons: View {
     var colorButton: Color
     var colorButtonBg: Color
     var colorWaveform: Color
+    /// Внешний обработчик тапа по play. Когда задан — форк не проигрывает сам:
+    /// URL короткоживущий и резолвится в приложении (карточка секрета).
+    /// Штатные вызовы параметр не передают и работают как раньше.
+    var onPlayTap: (() -> Void)? = nil
 
     var duration: Int {
         return max(Int((recordPlayer.secondsLeft != 0 ? recordPlayer.secondsLeft : recording.duration)), 0)
@@ -38,7 +42,11 @@ struct RecordWaveformWithButtons: View {
             .viewSize(40)
             .circleBackground(colorButtonBg)
             .highPriorityGesture(TapGesture().onEnded {
-                recordPlayer.togglePlay(recording)
+                if let onPlayTap {
+                    onPlayTap()
+                } else {
+                    recordPlayer.togglePlay(recording)
+                }
             })
             
             VStack(alignment: .leading, spacing: 5) {
