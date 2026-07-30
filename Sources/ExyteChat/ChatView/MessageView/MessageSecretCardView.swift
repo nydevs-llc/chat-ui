@@ -154,6 +154,11 @@ struct SecretVoicePill: View {
     let voice: MessageSecretAttachment.Voice
     let onPlay: ((String) -> Void)?
 
+    /// Поднимается ТОЛЬКО явным тапом по play при отсутствующей ссылке. Живёт до
+    /// прихода `url`, после чего плеер стартует сам и флаг сбрасывается. Ячейка,
+    /// приехавшая на экран с уже готовым `url`, флаг не поднимает и молчит.
+    @State private var pendingPlayAfterResolve = false
+
     private static let buttonColor = Color(red: 75 / 255, green: 51 / 255, blue: 182 / 255)
 
     private var recording: Recording {
@@ -170,9 +175,15 @@ struct SecretVoicePill: View {
             colorButton: Self.buttonColor,
             colorButtonBg: .white,
             colorWaveform: .white,
-            // Ссылки ещё нет — тап только просит приложение её резолвнуть.
-            // Как только `url` придёт, override снимается и работает штатный плеер.
-            onPlayTap: voice.url == nil ? { onPlay?(voice.fileId) } : nil
+            // Ссылки ещё нет — тап только просит приложение её резолвнуть и
+            // запоминает намерение. Как только `url` придёт, override снимается,
+            // работает штатный плеер, а отложенный старт срабатывает сам —
+            // второй тап пользователю не нужен.
+            onPlayTap: voice.url == nil ? {
+                pendingPlayAfterResolve = true
+                onPlay?(voice.fileId)
+            } : nil,
+            pendingPlayAfterResolve: $pendingPlayAfterResolve
         )
         // Пересоздавать вью по смене URL не нужно и вредно: `RecordingPlayer.togglePlay`
         // сам замечает новый `recording.url`, а смена identity убила бы уже идущее

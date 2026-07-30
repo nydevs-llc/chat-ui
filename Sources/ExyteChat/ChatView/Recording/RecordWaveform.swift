@@ -22,6 +22,14 @@ struct RecordWaveformWithButtons: View {
     /// URL короткоживущий и резолвится в приложении (карточка секрета).
     /// Штатные вызовы параметр не передают и работают как раньше.
     var onPlayTap: (() -> Void)? = nil
+    /// Однократный триггер отложенного старта: пользователь уже нажал play, но
+    /// ссылки тогда ещё не было. Как только `recording.url` приезжает,
+    /// воспроизведение стартует само и флаг сбрасывается.
+    ///
+    /// Не «играть при появлении готового URL»: флаг поднимает только явный тап,
+    /// поэтому ячейка, приехавшая на экран с уже готовой ссылкой, молчит.
+    /// Штатные вызовы параметр не передают → `onChange` ниже ничего не делает.
+    var pendingPlayAfterResolve: Binding<Bool>? = nil
 
     var duration: Int {
         return max(Int((recordPlayer.secondsLeft != 0 ? recordPlayer.secondsLeft : recording.duration)), 0)
@@ -56,6 +64,18 @@ struct RecordWaveformWithButtons: View {
                     .monospacedDigit()
                     .foregroundColor(colorWaveform)
             }
+        }
+        .onChange(of: recording.url) { newURL in
+            // Ссылка доехала после того, как пользователь нажал play, — стартуем
+            // сами. Для штатных голосовых `recording.url` не меняется, а
+            // `pendingPlayAfterResolve` не передан, так что путь мёртв.
+            guard newURL != nil,
+                  pendingPlayAfterResolve?.wrappedValue == true,
+                  !recordPlayer.playing else { return }
+            pendingPlayAfterResolve?.wrappedValue = false
+            var resolved = recording
+            resolved.url = newURL
+            recordPlayer.togglePlay(resolved)
         }
     }
 }
