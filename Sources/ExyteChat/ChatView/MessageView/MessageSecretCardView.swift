@@ -158,6 +158,15 @@ struct SecretVoicePill: View {
     /// прихода `url`, после чего плеер стартует сам и флаг сбрасывается. Ячейка,
     /// приехавшая на экран с уже готовым `url`, флаг не поднимает и молчит.
     @State private var pendingPlayAfterResolve = false
+    @State private var resolveTimeoutTask: Task<Void, Never>?
+
+    /// Сколько ждём ссылку, прежде чем молча погасить намерение.
+    ///
+    /// 15 с — потолок самого запроса в приложении (`timeoutIntervalForRequest`),
+    /// плюс 3 с на переотдачу сообщения в ленту и реконфиг ячейки. Позже этого
+    /// срока легитимной ссылки по этому тапу уже не будет — запрос отвалился сам,
+    /// и всё, что могло бы приехать, дало бы только неожиданный звук.
+    private static let resolveTimeout: TimeInterval = 18
 
     private static let buttonColor = Color(red: 75 / 255, green: 51 / 255, blue: 182 / 255)
 
@@ -182,11 +191,39 @@ struct SecretVoicePill: View {
             onPlayTap: voice.url == nil ? {
                 pendingPlayAfterResolve = true
                 onPlay?(voice.fileId)
+                startResolveTimeout()
             } : nil,
             pendingPlayAfterResolve: $pendingPlayAfterResolve
         )
         // Пересоздавать вью по смене URL не нужно и вредно: `RecordingPlayer.togglePlay`
         // сам замечает новый `recording.url`, а смена identity убила бы уже идущее
         // воспроизведение, если приложение перевыпустит протухшую ссылку.
+        .onChange(of: voice.url) { newURL in
+            // Ссылка приехала — ждать больше нечего. Сам флаг гасит плеер,
+            // стартуя воспроизведение; здесь только снимаем таймер.
+            if newURL != nil { cancelResolveTimeout() }
+        }
+        .onDisappear {
+            // Карточка ушла с экрана — намерение больше не актуально: вернувшись,
+            // пользователь не ждёт, что голос заиграет сам.
+            cancelResolveTimeout()
+            pendingPlayAfterResolve = false
+        }
+    }
+
+    private func startResolveTimeout() {
+        resolveTimeoutTask?.cancel()
+        resolveTimeoutTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(Self.resolveTimeout * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            // Молча: повторный тап никто не запрещает.
+            pendingPlayAfterResolve = false
+            resolveTimeoutTask = nil
+        }
+    }
+
+    private func cancelResolveTimeout() {
+        resolveTimeoutTask?.cancel()
+        resolveTimeoutTask = nil
     }
 }
