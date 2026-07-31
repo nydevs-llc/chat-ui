@@ -6,8 +6,17 @@
 //  Карточка одинакова для входящего и исходящего — это цитата ЧУЖОГО секрета
 //  в обе стороны; зеркалится только пузырь ответа поверх неё (см. MessageView).
 //
+//  Эталон оформления — карточка того же секрета в компоузере приложения
+//  (`SparkSecretReplyCardView` + `SecretQuoteCardStyle`). Один и тот же секрет
+//  обязан выглядеть одинаково в компоузере и в переписке, поэтому палитра,
+//  геометрия, кегли и правило «уменьшаем кегль, НЕ обрезаем» перенесены оттуда
+//  один в один. Расходится сознательно только высота: в компоузере карточка
+//  тянется к пропорции макета 236×408, в ленте сообщений столько занимать нельзя,
+//  поэтому здесь она обнимает контент.
+//
 
 import SwiftUI
+import UIKit
 
 struct MessageSecretCardView: View {
 
@@ -16,20 +25,25 @@ struct MessageSecretCardView: View {
     /// в сигнатуре как контекст композиции и точка расширения.
     let isOutgoing: Bool
 
-    // MARK: - Layout
+    // MARK: - Layout (значения компоузера)
 
     private enum Layout {
         static let width: CGFloat = 236
-        static let corner: CGFloat = 24
-        static let padding: CGFloat = 24
-        static let answerLineLimit: Int = 4
+        static let corner: CGFloat = 28
+        static let paddingHorizontal: CGFloat = 22
+        static let paddingVertical: CGFloat = 30
         static let accentLineWidth: CGFloat = 4
+        /// Отступ вопроса от левой черты.
+        static let questionSpacing: CGFloat = 10
         static let dividerWidth: CGFloat = 88
         static let dividerHeight: CGFloat = 4
-        static let quoteFontSize: CGFloat = 56
+        static let dividerTop: CGFloat = 18
+        static let answerTop: CGFloat = 20
+        static let quoteFontSize: CGFloat = 110
+        static let quoteOpacity: Double = 0.10
     }
 
-    // MARK: - Colors (макет «Ответ на секрет»)
+    // MARK: - Colors (макет «Ответ на секрет», зеркало `SecretQuoteCardStyle`)
 
     /// #6A4CE0
     private static let gradientTop = Color(red: 106 / 255, green: 76 / 255, blue: 224 / 255)
@@ -43,99 +57,202 @@ struct MessageSecretCardView: View {
     private static let accentLineColor = Color(red: 183 / 255, green: 155 / 255, blue: 255 / 255)
     /// #8B6BFF
     private static let dividerColor = Color(red: 139 / 255, green: 107 / 255, blue: 255 / 255)
+    private static let strokeColor = Color.white.opacity(0.14)
+    /// #4A2DB4 × 0.4
+    private static let shadowColor = Color(red: 74 / 255, green: 45 / 255, blue: 180 / 255).opacity(0.4)
 
     // MARK: - Body
 
+    /// Порядок модификаторов повторяет компоузер и значим:
+    /// градиент и блик — фоном/оверлеем ДО `clipShape`, кавычки — оверлеем ПОСЛЕ,
+    /// иначе глиф режется скруглённым углом карточки.
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 12) {
-                RoundedRectangle(cornerRadius: Layout.accentLineWidth / 2)
-                    .fill(Self.accentLineColor)
-                    .frame(width: Layout.accentLineWidth)
-
-                Text(attachment.question)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(Self.questionColor)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-
-            RoundedRectangle(cornerRadius: Layout.dividerHeight / 2)
-                .fill(Self.dividerColor)
-                .frame(width: Layout.dividerWidth, height: Layout.dividerHeight)
-                .padding(.top, 14)
-                .padding(.leading, 16)
-
-            content
-                .padding(.top, 18)
-        }
-        .padding(Layout.padding)
-        .frame(width: Layout.width, alignment: .leading)
-        .background(cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: Layout.corner, style: .continuous))
+        content
+            .padding(.horizontal, Layout.paddingHorizontal)
+            .padding(.vertical, Layout.paddingVertical)
+            .frame(width: Layout.width, alignment: .leading)
+            .background(cardGradient)
+            .overlay(highlight.allowsHitTesting(false))
+            .clipShape(RoundedRectangle(cornerRadius: Layout.corner, style: .continuous))
+            .overlay(quoteGlyph.padding(.leading, 10).padding(.top, -6), alignment: .topLeading)
+            .overlay(
+                quoteGlyph.rotationEffect(.degrees(180)).padding(.trailing, 10).padding(.bottom, -6),
+                alignment: .bottomTrailing
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Layout.corner, style: .continuous)
+                    .stroke(Self.strokeColor, lineWidth: 1)
+            )
+            .shadow(color: Self.shadowColor, radius: 20, y: 12)
+            .accessibilityElement(children: accessibilityChildBehavior)
+            .accessibilityLabel(accessibilityLabel)
     }
 
     // MARK: - Content
 
-    /// Правило контента: голос вытесняет курсивную цитату.
-    @ViewBuilder
     private var content: some View {
-        if let voice = attachment.voice {
-            SecretVoicePill(voice: voice, onPlay: attachment.onPlay)
-        } else if let answer = attachment.answer, !answer.isEmpty {
-            Text(answer)
-                .font(.custom("Times New Roman", size: 20).italic())
-                .foregroundColor(.white)
-                .lineLimit(Layout.answerLineLimit)
+        VStack(alignment: .leading, spacing: 0) {
+            questionBlock
+
+            RoundedRectangle(cornerRadius: Layout.dividerHeight / 2, style: .continuous)
+                .fill(Self.dividerColor)
+                .frame(width: Layout.dividerWidth, height: Layout.dividerHeight)
+                .padding(.top, Layout.dividerTop)
+
+            // Правило контента: голос вытесняет курсивную цитату.
+            if let voice = attachment.voice {
+                SecretVoicePill(
+                    voice: voice,
+                    onPlay: attachment.onPlay,
+                    onPlaybackStarted: attachment.onPlaybackStarted
+                )
+                .padding(.top, Layout.answerTop)
+            } else if let answer = attachment.answer, !answer.isEmpty {
+                Text(answer)
+                    .font(Self.answerFont(size: Self.answerFontSize(for: answer)))
+                    .foregroundColor(.white)
+                    .lineSpacing(4)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, Layout.answerTop)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var questionBlock: some View {
+        HStack(alignment: .top, spacing: Layout.questionSpacing) {
+            RoundedRectangle(cornerRadius: Layout.accentLineWidth / 2, style: .continuous)
+                .fill(Self.accentLineColor)
+                .frame(width: Layout.accentLineWidth)
+
+            Text(attachment.question)
+                .font(.system(size: Self.questionFontSize(for: attachment.question), weight: .bold))
+                .foregroundColor(Self.questionColor)
+                .lineSpacing(2)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // MARK: - Adaptive type
+
+    // Длинный секрет НЕ обрезается, а уменьшает кегль — правило дизайн-спеки,
+    // общее для ленты, компоузера и переписки: иначе один и тот же секрет
+    // читался бы по-разному в трёх местах. Пороги взяты из компоузера дословно —
+    // они рассчитаны ровно на эту контентную ширину (236 − 2×22 = 192pt),
+    // а карточка здесь той же ширины и с теми же паддингами.
+
+    private static func answerFontSize(for answer: String) -> CGFloat {
+        switch answer.count {
+        case ...50: return 20
+        case ...90: return 18
+        case ...140: return 16
+        default: return 14
+        }
+    }
+
+    private static func questionFontSize(for question: String) -> CGFloat {
+        switch question.count {
+        case ...40: return 15
+        case ...70: return 14
+        default: return 13
+        }
+    }
+
+    // MARK: - Fonts
+
+    /// PostScript-имя курсивного serif'а приложения.
+    private static let serifItalicPostScriptName = "LiberationSerif-Italic"
+
+    /// Курсивный serif ответа.
+    ///
+    /// `.custom(…).italic()` до iOS 16 НЕ работает: на кастомном шрифте модификатор
+    /// молча игнорируется, и на iOS 15 ответ в переписке был бы прямым, тогда как в
+    /// компоузере — курсивным. Поэтому берём готовое курсивное начертание по имени,
+    /// а не пытаемся наклонить прямое.
+    ///
+    /// Шрифт носит и регистрирует ПРИЛОЖЕНИЕ — `AppFont.registerCustomFontsIfNeeded()`
+    /// через `CTFontManagerRegisterFontsForURL` со скоупом `.process` (в Info.plist
+    /// `UIAppFonts` нет). Скоуп `.process` делает шрифт видимым и отсюда, но
+    /// регистрация ЛЕНИВАЯ — на первом обращении к `AppFont`. Поэтому имя резолвится
+    /// на каждом рендере, а не один раз в статике: карточка, отрисованная раньше
+    /// первого обращения приложения к `AppFont`, подхватит шрифт на следующем рендере.
+    ///
+    /// Не резолвится вовсе (форк собран отдельно, демо-приложение) — системный
+    /// serif-курсив. Это тот же фолбек, что и внутри `AppFont`, так что расхождения
+    /// с компоузером не будет ни в одном из случаев.
+    ///
+    /// `Font(uiFont)`, а не `.custom(_:size:)`, — тоже ради совпадения: `.custom`
+    /// масштабируется Dynamic Type, `Font(uiFont)` нет, а компоузер использует второе.
+    private static func answerFont(size: CGFloat) -> Font {
+        if let uiFont = UIFont(name: serifItalicPostScriptName, size: size) {
+            return Font(uiFont)
+        }
+        return .system(size: size, design: .serif).italic()
     }
 
     // MARK: - Background
 
-    private var cardBackground: some View {
-        ZStack {
-            // 158° из макета: направление (sin158°, cos158°) в экранных координатах.
-            LinearGradient(
-                colors: [Self.gradientTop, Self.gradientMid, Self.gradientBottom],
-                startPoint: UnitPoint(x: 0.313, y: 0.036),
-                endPoint: UnitPoint(x: 0.687, y: 0.964)
-            )
-
-            RadialGradient(
-                colors: [Color.white.opacity(0.18), Color.white.opacity(0)],
-                center: UnitPoint(x: 0.5, y: 0),
-                startRadius: 0,
-                endRadius: Layout.width * 0.85
-            )
-
-            decorativeQuotes
-        }
+    private var cardGradient: some View {
+        // 158° из макета: направление (sin158°, cos158°) в экранных координатах.
+        LinearGradient(
+            stops: [
+                .init(color: Self.gradientTop, location: 0),
+                .init(color: Self.gradientMid, location: 0.46),
+                .init(color: Self.gradientBottom, location: 1)
+            ],
+            startPoint: UnitPoint(x: 0.31, y: 0.04),
+            endPoint: UnitPoint(x: 0.69, y: 0.96)
+        )
     }
 
-    /// Кавычки Georgia 10% белого: верхняя слева, нижняя справа повёрнута на 180°.
-    private var decorativeQuotes: some View {
-        ZStack {
-            Text(verbatim: "\u{201C}")
-                .font(.custom("Georgia", size: Layout.quoteFontSize))
-                .foregroundColor(Color.white.opacity(0.1))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(.leading, 10)
-                .padding(.top, -4)
+    /// Радиальный блик сверху — объём карточки на макете.
+    private var highlight: some View {
+        RadialGradient(
+            colors: [Color.white.opacity(0.18), Color.white.opacity(0)],
+            center: UnitPoint(x: 0.5, y: 0),
+            startRadius: 0,
+            endRadius: Layout.width * 0.9
+        )
+    }
 
-            Text(verbatim: "\u{201C}")
-                .font(.custom("Georgia", size: Layout.quoteFontSize))
-                .foregroundColor(Color.white.opacity(0.1))
-                .rotationEffect(.degrees(180))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                .padding(.trailing, 10)
-                .padding(.bottom, -4)
-        }
-        .allowsHitTesting(false)
+    /// Декоративная кавычка Georgia. Закрывающая — та же глифа, повёрнутая на 180°.
+    ///
+    /// - Note: `allowsHitTesting(false)` убирает только касания — от VoiceOver это
+    ///   не прячет, и скринридер читал бы по два символа кавычки на карточку.
+    ///   Прячет именно `accessibilityHidden(true)`.
+    private var quoteGlyph: some View {
+        Text(verbatim: "\u{201C}")
+            .font(.custom("Georgia", size: Layout.quoteFontSize))
+            .foregroundColor(Color.white.opacity(Layout.quoteOpacity))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .fixedSize()
+    }
+
+    // MARK: - Accessibility
+
+    /// Текстовый секрет читается ОДНИМ элементом (`.combine`) — интерактивных детей
+    /// внутри нет, терять нечего.
+    ///
+    /// У голосового — `.contain`: `.combine` схлопнул бы кнопку play в общий элемент,
+    /// и единственное интерактивное место карточки перестало бы быть отдельно
+    /// достижимым. Здесь лейбл работает как имя группы, а плеер остаётся
+    /// самостоятельным элементом.
+    private var accessibilityChildBehavior: AccessibilityChildBehavior {
+        attachment.voice == nil ? .combine : .contain
+    }
+
+    /// «Секрет. <вопрос>. <ответ | Голосовой ответ>» — тот же лейбл, что в компоузере.
+    private var accessibilityLabel: String {
+        let tail = attachment.voice != nil
+            ? attachment.voiceAnswerAccessibilityLabel
+            : (attachment.answer ?? "")
+        return [attachment.accessibilityTitle, attachment.question, tail]
+            .filter { !$0.isEmpty }
+            .joined(separator: ". ")
     }
 }
 
@@ -153,6 +270,8 @@ struct SecretVoicePill: View {
 
     let voice: MessageSecretAttachment.Voice
     let onPlay: ((String) -> Void)?
+    /// Плеер действительно заиграл. См. докблок в `MessageSecretAttachment`.
+    let onPlaybackStarted: ((String) -> Void)?
 
     /// Поднимается ТОЛЬКО явным тапом по play при отсутствующей ссылке. Живёт до
     /// прихода `url`, после чего плеер стартует сам и флаг сбрасывается. Ячейка,
@@ -193,7 +312,10 @@ struct SecretVoicePill: View {
                 onPlay?(voice.fileId)
                 startResolveTimeout()
             } : nil,
-            pendingPlayAfterResolve: $pendingPlayAfterResolve
+            pendingPlayAfterResolve: $pendingPlayAfterResolve,
+            // Приложению нужен ФАКТ старта, а не факт резолва: между ссылкой и
+            // звуком лежат загрузка и декод, и на плохой сети они не доезжают.
+            onPlaybackStarted: onPlaybackStarted.map { report in { report(voice.fileId) } }
         )
         // Пересоздавать вью по смене URL не нужно и вредно: `RecordingPlayer.togglePlay`
         // сам замечает новый `recording.url`, а смена identity убила бы уже идущее

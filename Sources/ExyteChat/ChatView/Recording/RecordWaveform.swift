@@ -30,6 +30,21 @@ struct RecordWaveformWithButtons: View {
     /// поэтому ячейка, приехавшая на экран с уже готовой ссылкой, молчит.
     /// Штатные вызовы параметр не передают → `onChange` ниже ничего не делает.
     var pendingPlayAfterResolve: Binding<Bool>? = nil
+    /// Воспроизведение ФАКТИЧЕСКИ началось.
+    ///
+    /// Наблюдаем сам плеер, а не точку вызова `togglePlay`: тап — это намерение
+    /// («сыграй»), а не факт, и на пути к звуку лежат резолв ссылки, загрузка и
+    /// декод. `RecordingPlayer.playing` переходит в `true` только когда команда
+    /// ушла в `AVPlayer` с готовым item'ом — это ближайший к правде сигнал,
+    /// доступный внутри форка.
+    ///
+    /// Зовётся и на возобновление после паузы: плеер кладёт фазу обратно в `false`,
+    /// поэтому «продолжить» — это снова переход в `true`. Схлопывать здесь нечем —
+    /// защёлка живёт в приложении, где переживает переиспользование ячеек.
+    ///
+    /// Штатные голосовые сообщения параметр не передают: замыкание `nil`,
+    /// `onChange` ниже ничего не делает.
+    var onPlaybackStarted: (() -> Void)? = nil
 
     var duration: Int {
         return max(Int((recordPlayer.secondsLeft != 0 ? recordPlayer.secondsLeft : recording.duration)), 0)
@@ -76,6 +91,10 @@ struct RecordWaveformWithButtons: View {
             var resolved = recording
             resolved.url = newURL
             recordPlayer.togglePlay(resolved)
+        }
+        .onChange(of: recordPlayer.playing) { isPlaying in
+            guard isPlaying else { return }
+            onPlaybackStarted?()
         }
     }
 }
