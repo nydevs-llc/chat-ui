@@ -76,9 +76,9 @@ struct MessageRow: Equatable {
         // Именно этот оператор решает, реконфигурировать ли ячейку
         // (`oldRow != newRow` в `SonataUIList.apply`) — `Message.==` живой путь
         // не зовёт. Без этой строки переотданное сообщение с резолвнутым
-        // `secretAttachment.voice.url` не доедет до уже отрисованной ячейки:
+        // `publicationAttachment.voice.url` не доедет до уже отрисованной ячейки:
         // плеер так и останется без ссылки, пока ячейку не передёрнут скроллом.
-        && lhs.message.secretAttachment == rhs.message.secretAttachment
+        && lhs.message.publicationAttachment == rhs.message.publicationAttachment
     }
 }
 

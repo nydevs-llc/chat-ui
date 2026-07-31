@@ -1,9 +1,16 @@
 //
-//  MessageSecretCardView.swift
+//  MessagePublicationQuoteCardView.swift
 //  Chat
 //
-//  Карточка-цитата секрета: вопрос + ответ владельца анкеты (текст или голос).
-//  Карточка одинакова для входящего и исходящего — это цитата ЧУЖОГО секрета
+//  Карточка-цитата публикации: вопрос (секрет / вопрос дня) + ответ владельца
+//  анкеты, текстом или голосом. Показывается только тем публикациям, у которых
+//  есть вопрос ИЛИ голос (`MessagePublicationAttachment.showsQuoteCard`);
+//  свободный пост остаётся на компактной `MessagePublicationCardView`.
+//
+//  Вопрос ОПЦИОНАЛЕН: аудио-публикация без вопроса рисуется без заголовка —
+//  только разделитель и плеер.
+//
+//  Карточка одинакова для входящего и исходящего — это цитата ЧУЖОЙ публикации
 //  в обе стороны; зеркалится только пузырь ответа поверх неё (см. MessageView).
 //
 //  Эталон оформления — карточка того же секрета в компоузере приложения
@@ -18,9 +25,9 @@
 import SwiftUI
 import UIKit
 
-struct MessageSecretCardView: View {
+struct MessagePublicationQuoteCardView: View {
 
-    let attachment: MessageSecretAttachment
+    let attachment: MessagePublicationAttachment
     /// Не влияет на оформление карточки (она одинакова в обе стороны) — оставлен
     /// в сигнатуре как контекст композиции и точка расширения.
     let isOutgoing: Bool
@@ -42,6 +49,13 @@ struct MessageSecretCardView: View {
         static let quoteFontSize: CGFloat = 110
         static let quoteOpacity: Double = 0.10
     }
+
+    /// Ширина контента карточки: 236 − 2×22 = 192pt.
+    ///
+    /// Не косметика: на неё рассчитаны пороги адаптивного кегля ниже, и по ней же
+    /// прореживается волна голосового ответа (`PublicationVoicePill`), иначе она
+    /// требует ширины по числу сэмплов и вылезает за границу карточки.
+    static let contentWidth: CGFloat = Layout.width - 2 * Layout.paddingHorizontal
 
     // MARK: - Colors
     //
@@ -105,24 +119,29 @@ struct MessageSecretCardView: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
-            questionBlock
+            if let question = question {
+                questionBlock(question)
+            }
 
+            // Разделитель рисуется всегда, в том числе без заголовка: он держит
+            // верхний край блока ответа. Отступ сверху нужен только когда над ним
+            // действительно есть вопрос — иначе карточка начиналась бы с пустоты.
             RoundedRectangle(cornerRadius: Layout.dividerHeight / 2, style: .continuous)
                 .fill(Self.dividerColor)
                 .frame(width: Layout.dividerWidth, height: Layout.dividerHeight)
-                .padding(.top, Layout.dividerTop)
+                .padding(.top, question == nil ? 0 : Layout.dividerTop)
 
             // Правило контента: голос вытесняет курсивную цитату.
             if let voice = attachment.voice {
-                SecretVoicePill(
+                PublicationVoicePill(
                     voice: voice,
                     onPlay: attachment.onPlay,
                     onPlaybackStarted: attachment.onPlaybackStarted
                 )
                 .padding(.top, Layout.answerTop)
-            } else if let answer = attachment.answer, !answer.isEmpty {
-                Text(answer)
-                    .font(Self.answerFont(size: Self.answerFontSize(for: answer)))
+            } else if !attachment.text.isEmpty {
+                Text(attachment.text)
+                    .font(Self.answerFont(size: Self.answerFontSize(for: attachment.text)))
                     .foregroundColor(.white)
                     .lineSpacing(4)
                     .multilineTextAlignment(.leading)
@@ -133,14 +152,22 @@ struct MessageSecretCardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var questionBlock: some View {
+    /// Вопрос, если он есть и непустой. Пустая строка приравнена к отсутствию —
+    /// то же правило, что в `MessagePublicationAttachment.showsQuoteCard`, иначе
+    /// карточка нарисовала бы черту и отступ вокруг пустоты.
+    private var question: String? {
+        guard let question = attachment.question, !question.isEmpty else { return nil }
+        return question
+    }
+
+    private func questionBlock(_ question: String) -> some View {
         HStack(alignment: .top, spacing: Layout.questionSpacing) {
             RoundedRectangle(cornerRadius: Layout.accentLineWidth / 2, style: .continuous)
                 .fill(Self.accentLineColor)
                 .frame(width: Layout.accentLineWidth)
 
-            Text(attachment.question)
-                .font(.system(size: Self.questionFontSize(for: attachment.question), weight: .bold))
+            Text(question)
+                .font(.system(size: Self.questionFontSize(for: question), weight: .bold))
                 .foregroundColor(Self.questionColor)
                 .lineSpacing(2)
                 .multilineTextAlignment(.leading)
@@ -247,7 +274,7 @@ struct MessageSecretCardView: View {
 
     // MARK: - Accessibility
 
-    /// Текстовый секрет читается ОДНИМ элементом (`.combine`) — интерактивных детей
+    /// Текстовый ответ читается ОДНИМ элементом (`.combine`) — интерактивных детей
     /// внутри нет, терять нечего.
     ///
     /// У голосового — `.contain`: `.combine` схлопнул бы кнопку play в общий элемент,
@@ -259,11 +286,13 @@ struct MessageSecretCardView: View {
     }
 
     /// «Секрет. <вопрос>. <ответ | Голосовой ответ>» — тот же лейбл, что в компоузере.
+    /// Пустые куски отфильтровываются, поэтому публикация без вопроса читается
+    /// «Секрет. Голосовой ответ», без дыры в середине.
     private var accessibilityLabel: String {
         let tail = attachment.voice != nil
             ? attachment.voiceAnswerAccessibilityLabel
-            : (attachment.answer ?? "")
-        return [attachment.accessibilityTitle, attachment.question, tail]
+            : attachment.text
+        return [attachment.accessibilityTitle, question ?? "", tail]
             .filter { !$0.isEmpty }
             .joined(separator: ". ")
     }
@@ -279,11 +308,11 @@ struct MessageSecretCardView: View {
 ///   `onPlay(fileId)`, форк сам ничего не проигрывает (он не знает про файловый сервис).
 /// - `url != nil` — приложение вернуло короткоживущую ссылку: играем штатным
 ///   путём, тем же, которым играют обычные голосовые, — с прогрессом волны.
-struct SecretVoicePill: View {
+struct PublicationVoicePill: View {
 
-    let voice: MessageSecretAttachment.Voice
+    let voice: MessagePublicationAttachment.Voice
     let onPlay: ((String) -> Void)?
-    /// Плеер действительно заиграл. См. докблок в `MessageSecretAttachment`.
+    /// Плеер действительно заиграл. См. докблок в `MessagePublicationAttachment`.
     let onPlaybackStarted: ((String) -> Void)?
 
     /// Поднимается ТОЛЬКО явным тапом по play при отсутствующей ссылке. Живёт до
@@ -302,10 +331,36 @@ struct SecretVoicePill: View {
 
     private static let buttonColor = Color(red: 75 / 255, green: 51 / 255, blue: 182 / 255)
 
+    /// Кнопка play (40) + отступ `HStack` до волны (12).
+    private static let controlsWidth: CGFloat = 40 + 12
+
+    /// Сколько пикселей остаётся волне внутри карточки.
+    private static var waveformWidth: CGFloat {
+        MessagePublicationQuoteCardView.contentWidth - controlsWidth
+    }
+
+    /// Волна, прореженная под ширину карточки.
+    ///
+    /// 🐞 Иначе она карточку разрывает. `RecordWaveformPlaying` фиксирует свою
+    /// ширину через `.fixedSize(horizontal: true)` по ЧИСЛУ СЭМПЛОВ
+    /// (`4 × count − 2`), а прореживает только под ширину ЭКРАНА — для голосового
+    /// сообщения во всю ширину пузыря этого достаточно, для карточки в 236pt нет.
+    /// Продакшеновая запись 12 с — это ~207 сэмплов, то есть ~826pt при доступных
+    /// 140: хвост волны срезал `clipShape`, а вместе с ним ломался и перенос
+    /// вопроса — раздутая ширина ребёнка уезжала в родительский `VStack`.
+    ///
+    /// Прореживаем здесь, а не в общем компоненте: у обычных голосовых своя
+    /// ширина, и менять её нельзя. Алгоритм — тот же `downsampled`, которым
+    /// `RecordWaveformPlaying` ужимает волну под экран, поэтому рисунок остаётся
+    /// узнаваемым, а не обрезанным. Побочно чинится и маска прогресса: она
+    /// считается от `samples.count`, и на несогласованном числе сэмплов ехала.
     private var recording: Recording {
         Recording(
             duration: Double(voice.durationMs) / 1000,
-            waveformSamples: voice.waveform.map { CGFloat($0) },
+            waveformSamples: RecordWaveformPlaying.downsampled(
+                voice.waveform.map { CGFloat($0) },
+                fitting: Self.waveformWidth
+            ),
             url: voice.url
         )
     }

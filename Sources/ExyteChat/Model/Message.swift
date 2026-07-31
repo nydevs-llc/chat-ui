@@ -7,19 +7,8 @@
 
 import SwiftUI
 
-public struct MessagePublicationAttachment: Hashable {
-    public let id: Int
-    public let text: String
-    public let photoURL: URL?
-    public let blurHash: String?
-
-    public init(id: Int, text: String, photoURL: URL?, blurHash: String?) {
-        self.id = id
-        self.text = text
-        self.photoURL = photoURL
-        self.blurHash = blurHash
-    }
-}
+// `MessagePublicationAttachment` переехал в собственный файл (Model/) — он оброс
+// вопросом, голосом и правилом рендера и в шапке Message.swift больше не помещается.
 
 public struct Message: Identifiable, Hashable {
 
@@ -76,7 +65,6 @@ public struct Message: Identifiable, Hashable {
     public var isEncrypted: Bool
     public var isDeleted: Bool
     public var publicationAttachment: MessagePublicationAttachment?
-    public var secretAttachment: MessageSecretAttachment?
     public var triggerRedraw: UUID?
     public var isStreaming: Bool
 
@@ -95,7 +83,6 @@ public struct Message: Identifiable, Hashable {
                 isEncrypted: Bool = false,
                 isDeleted: Bool = false,
                 publicationAttachment: MessagePublicationAttachment? = nil,
-                secretAttachment: MessageSecretAttachment? = nil,
                 isStreaming: Bool = false) {
 
         self.id = id
@@ -111,7 +98,6 @@ public struct Message: Identifiable, Hashable {
         self.isEncrypted = isEncrypted
         self.isDeleted = isDeleted
         self.publicationAttachment = publicationAttachment
-        self.secretAttachment = secretAttachment
         self.isStreaming = isStreaming
     }
 
@@ -159,8 +145,7 @@ extension Message: Equatable {
         lhs.replyMessage == rhs.replyMessage &&
         lhs.isStreaming == rhs.isStreaming &&
         lhs.triggerRedraw == rhs.triggerRedraw &&
-        lhs.publicationAttachment == rhs.publicationAttachment &&
-        lhs.secretAttachment == rhs.secretAttachment
+        lhs.publicationAttachment == rhs.publicationAttachment
     }
 
     // `hash` задан явно и зеркалит `==`. Синтезированный вариант брал ВСЕ хранимые
@@ -180,7 +165,6 @@ extension Message: Equatable {
         hasher.combine(isStreaming)
         hasher.combine(triggerRedraw)
         hasher.combine(publicationAttachment)
-        hasher.combine(secretAttachment)
     }
 }
 

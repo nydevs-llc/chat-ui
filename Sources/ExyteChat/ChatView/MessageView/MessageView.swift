@@ -40,16 +40,16 @@ struct MessageView: View {
     static let horizontalStatusPadding: CGFloat = 8
     static let horizontalBubblePadding: CGFloat = 70
 
-    // Композиция «ответ на секрет» (макет)
-    static let secretCardWidth: CGFloat = 236
+    // Композиция «ответ на публикацию-цитату» (макет)
+    static let quoteCardWidth: CGFloat = 236
     /// На сколько пузырь ответа подвёрнут под нижнюю границу карточки.
-    static let secretReplyTuck: CGFloat = 22
+    static let quoteReplyTuck: CGFloat = 22
     /// #FFCB52
-    static let secretReplyOutgoingTop = Color(red: 255 / 255, green: 203 / 255, blue: 82 / 255)
+    static let quoteReplyOutgoingTop = Color(red: 255 / 255, green: 203 / 255, blue: 82 / 255)
     /// #F0982B
-    static let secretReplyOutgoingBottom = Color(red: 240 / 255, green: 152 / 255, blue: 43 / 255)
+    static let quoteReplyOutgoingBottom = Color(red: 240 / 255, green: 152 / 255, blue: 43 / 255)
     /// #3A2606
-    static let secretReplyOutgoingText = Color(red: 58 / 255, green: 38 / 255, blue: 6 / 255)
+    static let quoteReplyOutgoingText = Color(red: 58 / 255, green: 38 / 255, blue: 6 / 255)
 
     var font: UIFont
 
@@ -135,15 +135,20 @@ struct MessageView: View {
         .frame(maxWidth: UIScreen.main.bounds.width, alignment: message.user.isCurrentUser ? .trailing : .leading)
     }
 
-    /// Единственная развилка: вложение секрета рисуется собственной композицией
-    /// (карточка сама себе фон + пузырь ответа ПОВЕРХ неё с выходом за границу),
-    /// потому что штатный `bubbleView` складывает содержимое вертикально ВНУТРИ
-    /// подложки пузыря. Все остальные типы сообщений идут прежним путём —
-    /// тело `standardBubbleView` перенесено без единого изменения.
+    /// Единственная развилка: публикация-цитата (у неё есть вопрос или голос)
+    /// рисуется собственной композицией — карточка сама себе фон + пузырь ответа
+    /// ПОВЕРХ неё с выходом за границу, — потому что штатный `bubbleView`
+    /// складывает содержимое вертикально ВНУТРИ подложки пузыря.
+    ///
+    /// Публикация без вопроса и голоса (свободный пост) сюда НЕ попадает и идёт
+    /// прежним путём, компактной полоской внутри обычного пузыря: развилка стоит
+    /// на `showsQuoteCard`, а не на самом факте вложения. Все остальные типы
+    /// сообщений тоже идут прежним путём — тело `standardBubbleView` перенесено
+    /// без единого изменения.
     @ViewBuilder
     func bubbleView(_ message: Message) -> some View {
-        if let secret = message.secretAttachment {
-            secretComposition(message, secret)
+        if let publication = message.publicationAttachment, publication.showsQuoteCard {
+            publicationQuoteComposition(message, publication)
         } else {
             standardBubbleView(message)
         }
@@ -214,24 +219,27 @@ struct MessageView: View {
         }
     }
 
-    // MARK: - Secret attachment
+    // MARK: - Publication quote card
 
-    /// Карточка секрета + подвёрнутый снизу пузырь ответа. Пузырь лежит ПОВЕРХ
-    /// карточки и выходит за её левую (входящее) или правую (исходящее) границу.
-    /// Штатная подложка `bubbleBackground` здесь не применяется — карточка сама
-    /// себе фон.
+    /// Карточка-цитата публикации + подвёрнутый снизу пузырь ответа. Пузырь лежит
+    /// ПОВЕРХ карточки и выходит за её левую (входящее) или правую (исходящее)
+    /// границу. Штатная подложка `bubbleBackground` здесь не применяется —
+    /// карточка сама себе фон.
     @ViewBuilder
-    private func secretComposition(_ message: Message, _ secret: MessageSecretAttachment) -> some View {
+    private func publicationQuoteComposition(
+        _ message: Message,
+        _ publication: MessagePublicationAttachment
+    ) -> some View {
         VStack(
             alignment: message.user.isCurrentUser ? .leading : .trailing,
             spacing: 0
         ) {
             ZStack(alignment: .bottom) {
-                MessageSecretCardView(
-                    attachment: secret,
+                MessagePublicationQuoteCardView(
+                    attachment: publication,
                     isOutgoing: message.user.isCurrentUser
                 )
-                .padding(.bottom, MessageView.secretReplyTuck)
+                .padding(.bottom, MessageView.quoteReplyTuck)
 
                 if !message.text.isEmpty {
                     // Ширина строки = ширина карточки: пузырь обжимает свой текст
@@ -239,10 +247,10 @@ struct MessageView: View {
                     // а не по всей доступной ширине экрана.
                     HStack(spacing: 0) {
                         if message.user.isCurrentUser { Spacer(minLength: 0) }
-                        secretReplyBubble(message)
+                        quoteReplyBubble(message)
                         if !message.user.isCurrentUser { Spacer(minLength: 0) }
                     }
-                    .frame(width: MessageView.secretCardWidth)
+                    .frame(width: MessageView.quoteCardWidth)
                     .offset(x: message.user.isCurrentUser ? 6 : -6)
                 }
             }
@@ -259,13 +267,13 @@ struct MessageView: View {
     }
 
     @ViewBuilder
-    private func secretReplyBubble(_ message: Message) -> some View {
+    private func quoteReplyBubble(_ message: Message) -> some View {
         HStack(alignment: .lastTextBaseline, spacing: 8) {
             Text(message.text)
                 .font(Font(font))
                 .foregroundColor(
                     message.user.isCurrentUser
-                        ? MessageView.secretReplyOutgoingText
+                        ? MessageView.quoteReplyOutgoingText
                         : theme.colors.textLightContext
                 )
                 .multilineTextAlignment(.leading)
@@ -278,10 +286,10 @@ struct MessageView: View {
                     status: status,
                     needsCapsule: false,
                     colorSet: MessageStatusColorSet(
-                        sending: MessageView.secretReplyOutgoingText.opacity(0.5),
-                        sent: MessageView.secretReplyOutgoingText.opacity(0.5),
-                        received: MessageView.secretReplyOutgoingText.opacity(0.5),
-                        read: MessageView.secretReplyOutgoingText.opacity(0.5)
+                        sending: MessageView.quoteReplyOutgoingText.opacity(0.5),
+                        sent: MessageView.quoteReplyOutgoingText.opacity(0.5),
+                        received: MessageView.quoteReplyOutgoingText.opacity(0.5),
+                        read: MessageView.quoteReplyOutgoingText.opacity(0.5)
                     ),
                     onRetry: {
                         if case let .error(draft) = status {
@@ -294,16 +302,16 @@ struct MessageView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(secretReplyBubbleFill(message))
+        .background(quoteReplyBubbleFill(message))
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     @ViewBuilder
-    private func secretReplyBubbleFill(_ message: Message) -> some View {
+    private func quoteReplyBubbleFill(_ message: Message) -> some View {
         if message.user.isCurrentUser {
             // Оранжевый градиент исходящего пузыря ответа на секрет (макет).
             LinearGradient(
-                colors: [MessageView.secretReplyOutgoingTop, MessageView.secretReplyOutgoingBottom],
+                colors: [MessageView.quoteReplyOutgoingTop, MessageView.quoteReplyOutgoingBottom],
                 startPoint: .top,
                 endPoint: .bottom
             )

@@ -183,8 +183,25 @@ struct RecordWaveformPlaying: View {
     }
 
     func adjustedSamples(_ width: CGFloat) -> [CGFloat] {
-        let maxWidth = addExtraDots ? width : UIScreen.main.bounds.width
-        let maxSamples = Int(maxWidth / (RecordWaveform.width + RecordWaveform.spacing))
+        // Обратите внимание: без `addExtraDots` ужимаем под ширину ЭКРАНА, а не
+        // под фактическую. Для голосового сообщения это работает — пузырь и так
+        // почти во всю ширину. Тому, кто рисует волну в узком контейнере, этого
+        // мало: `maxLength` ниже фиксирует ширину по ИСХОДНОМУ числу сэмплов,
+        // и контейнер разорвёт. Такой потребитель обязан проредить сам —
+        // `downsampled(_:fitting:)` для этого и вынесен.
+        Self.downsampled(samples, fitting: addExtraDots ? width : UIScreen.main.bounds.width)
+    }
+
+    /// Усреднение соседних сэмплов, пока волна не влезет в `width`.
+    ///
+    /// Вынесено из `adjustedSamples` без изменений в алгоритме, чтобы карточка
+    /// публикации ужимала волну ровно так же, как это делает сам компонент, —
+    /// иначе рисунок волны в карточке и в сообщении разошёлся бы.
+    static func downsampled(_ samples: [CGFloat], fitting width: CGFloat) -> [CGFloat] {
+        let maxSamples = Int(width / (RecordWaveform.width + RecordWaveform.spacing))
+        // Ширины не хватает даже на один столбик: ужимать некуда, а цикл ниже
+        // на `maxSamples == 0` не завершился бы никогда.
+        guard maxSamples > 0 else { return samples }
 
         var adjusted = samples
         var temp = [CGFloat]()
