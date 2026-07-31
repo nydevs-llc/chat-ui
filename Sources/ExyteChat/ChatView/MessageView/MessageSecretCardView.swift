@@ -43,7 +43,20 @@ struct MessageSecretCardView: View {
         static let quoteOpacity: Double = 0.10
     }
 
-    // MARK: - Colors (макет «Ответ на секрет», зеркало `SecretQuoteCardStyle`)
+    // MARK: - Colors
+    //
+    // ⚠️ ЗЕРКАЛО, А НЕ ИСТОЧНИК ПРАВДЫ. Эти литералы (и геометрия в `Layout` выше)
+    // дублируют общий стиль приложения:
+    //
+    //   ours-ios → Modules/Foundation/UI/Sources/DesignSystem/SwiftUI/SecretQuoteCardStyle.swift
+    //   (потребители там: FeedQuoteCard — слайд ленты, SparkSecretReplyCardView — компоузер)
+    //
+    // Разделить нельзя: форк — отдельный репозиторий и не зависит от Foundation/UI.
+    // Поэтому правка палитры или геометрии карточки секрета обязана идти в ОБА
+    // репозитория одним заходом, иначе один и тот же секрет молча разъедется
+    // между лентой/компоузером и перепиской. Ровно это уже случалось — расхождение
+    // нашлось только финальным ревью, когда сверили карточки между собой, а не
+    // каждую с макетом по отдельности.
 
     /// #6A4CE0
     private static let gradientTop = Color(red: 106 / 255, green: 76 / 255, blue: 224 / 255)

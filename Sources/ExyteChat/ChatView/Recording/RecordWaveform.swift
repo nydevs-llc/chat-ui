@@ -30,21 +30,36 @@ struct RecordWaveformWithButtons: View {
     /// поэтому ячейка, приехавшая на экран с уже готовой ссылкой, молчит.
     /// Штатные вызовы параметр не передают → `onChange` ниже ничего не делает.
     var pendingPlayAfterResolve: Binding<Bool>? = nil
-    /// Воспроизведение ФАКТИЧЕСКИ началось.
+    /// Звук ФАКТИЧЕСКИ пошёл: playhead сдвинулся с нуля.
     ///
-    /// Наблюдаем сам плеер, а не точку вызова `togglePlay`: тап — это намерение
-    /// («сыграй»), а не факт, и на пути к звуку лежат резолв ссылки, загрузка и
-    /// декод. `RecordingPlayer.playing` переходит в `true` только когда команда
-    /// ушла в `AVPlayer` с готовым item'ом — это ближайший к правде сигнал,
-    /// доступный внутри форка.
+    /// Сигнал снят с `recordPlayer.progress`, а НЕ с `playing`, и это принципиально.
+    /// `RecordingPlayer.play()` делает `player?.play(); playing = true` без единой
+    /// проверки статуса item'а: протухшая ссылка, `.failed` или провал декода дадут
+    /// `playing == true` вообще без звука — ровно на плохой сети, ради которой
+    /// метрика и заводится.
     ///
-    /// Зовётся и на возобновление после паузы: плеер кладёт фазу обратно в `false`,
-    /// поэтому «продолжить» — это снова переход в `true`. Схлопывать здесь нечем —
-    /// защёлка живёт в приложении, где переживает переиспользование ячеек.
+    /// `progress` же заполняет периодический наблюдатель времени, и только после
+    /// `guard !item.duration.seconds.isNaN`: ненулевое значение означает, что asset
+    /// разобран, длительность известна и playhead реально едет. Это ближайшее к
+    /// «звук слышно», что доступно, — и достигается без единой правки плеера
+    /// (`progress` уже `@Published`).
     ///
-    /// Штатные голосовые сообщения параметр не передают: замыкание `nil`,
-    /// `onChange` ниже ничего не делает.
+    /// Альтернативу `playerItem.status == .readyToPlay` не выбрал: статус живёт
+    /// приватным полем `RecordingPlayer`, наружу не публикуется, и его пришлось бы
+    /// прокидывать новым `@Published` — правка плеера ради сигнала слабее (готовность
+    /// играть ≠ playhead поехал).
+    ///
+    /// Зовётся и на возобновление после паузы: защёлка снимается, когда плеер уходит
+    /// из `playing`. Дедупликация — на стороне приложения, где она переживает
+    /// переиспользование ячеек.
+    ///
+    /// Штатные голосовые сообщения параметр не передают: замыкание `nil`, и оба
+    /// `onChange` ниже выходят по первому же `guard`, не трогая даже `@State`.
     var onPlaybackStarted: (() -> Void)? = nil
+
+    /// Защёлка на одно проигрывание: `progress` тикает каждые 0.2 с, и без неё
+    /// «старт» улетал бы десятками раз за трек.
+    @State private var didReportPlaybackStart = false
 
     var duration: Int {
         return max(Int((recordPlayer.secondsLeft != 0 ? recordPlayer.secondsLeft : recording.duration)), 0)
@@ -92,9 +107,20 @@ struct RecordWaveformWithButtons: View {
             resolved.url = newURL
             recordPlayer.togglePlay(resolved)
         }
+        .onChange(of: recordPlayer.progress) { progress in
+            // `onPlaybackStarted` в guard первым: у штатных голосовых он nil, и
+            // ветка выходит здесь же, не трогая `@State` и не вызывая перерисовку.
+            guard let onPlaybackStarted,
+                  !didReportPlaybackStart,
+                  progress > 0,
+                  recordPlayer.playing else { return }
+            didReportPlaybackStart = true
+            onPlaybackStarted()
+        }
         .onChange(of: recordPlayer.playing) { isPlaying in
-            guard isPlaying else { return }
-            onPlaybackStarted?()
+            // Пауза/конец трека снимают защёлку: возобновление — это снова старт.
+            guard onPlaybackStarted != nil, !isPlaying else { return }
+            didReportPlaybackStart = false
         }
     }
 }

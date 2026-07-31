@@ -18,10 +18,16 @@ public struct MessageSecretAttachment {
     ///
     /// Форк не знает про каталог строк приложения и не носит своего, поэтому
     /// локализованные подписи приходят снаружи тем же каналом, что и `onPlay`.
-    /// Дефолт английский — он же значение для демо-приложения форка.
+    ///
+    /// - Important: у этого параметра и у `voiceAnswerAccessibilityLabel`
+    ///   СОЗНАТЕЛЬНО нет значений по умолчанию. С дефолтом забыть их можно молча,
+    ///   и на русском интерфейсе VoiceOver прочитал бы английское «Secret». Без
+    ///   дефолта это ошибка компиляции у потребителя — единственный способ не
+    ///   пропустить строку при бампе версии.
     public let accessibilityTitle: String
     /// Хвост accessibility-лейбла для голосового ответа («Голосовой ответ»):
     /// саму запись VoiceOver прочитать не может, читаем её описание.
+    /// Без значения по умолчанию — см. `accessibilityTitle`.
     public let voiceAnswerAccessibilityLabel: String
 
     /// Резолв короткоживящего URL живёт в приложении — форк не знает про файловый сервис.
@@ -76,8 +82,8 @@ public struct MessageSecretAttachment {
         question: String,
         answer: String?,
         voice: Voice?,
-        accessibilityTitle: String = "Secret",
-        voiceAnswerAccessibilityLabel: String = "Voice answer",
+        accessibilityTitle: String,
+        voiceAnswerAccessibilityLabel: String,
         onPlay: ((String) -> Void)? = nil,
         onPlaybackStarted: ((String) -> Void)? = nil
     ) {
