@@ -66,6 +66,23 @@ struct MessagePublicationCardView: View {
             RoundedRectangle(cornerRadius: Layout.cardCornerRadius)
                 .fill(cardBackground)
         )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    // MARK: - Accessibility
+
+    /// «Публикация. <текст>» — тот же приём, что у карточки-цитаты:
+    /// `accessibilityTitle` называет сущность, дальше идёт её содержимое.
+    ///
+    /// Без этого полоска читалась бы голым текстом публикации, неотличимым от
+    /// текста самого сообщения: VoiceOver произносил бы две реплики подряд, не
+    /// сказав, что первая — цитата. Интерактивных детей внутри нет (фото и текст
+    /// не тапаются по отдельности), поэтому `.combine`, а не `.contain`.
+    private var accessibilityLabel: String {
+        [attachment.accessibilityTitle, attachment.text]
+            .filter { !$0.isEmpty }
+            .joined(separator: ". ")
     }
 
     // MARK: - Photo
