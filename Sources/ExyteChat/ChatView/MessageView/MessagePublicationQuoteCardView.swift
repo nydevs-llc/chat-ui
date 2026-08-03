@@ -31,6 +31,13 @@ struct MessagePublicationQuoteCardView: View {
     /// Не влияет на оформление карточки (она одинакова в обе стороны) — оставлен
     /// в сигнатуре как контекст композиции и точка расширения.
     let isOutgoing: Bool
+    /// Пустота, добираемая снизу под подвёрнутый пузырь ответа.
+    ///
+    /// Карточка в переписке обнимает контент, а пузырь ложится ПОВЕРХ её нижнего
+    /// края — без резерва он накрывал бы последнюю строку ответа (на макете он
+    /// ложится на пустое место карточки в 408pt, здесь такой пустоты нет).
+    /// Считает композиция (`MessageView`): только она знает высоту пузыря.
+    var bottomReserve: CGFloat = 0
 
     // MARK: - Layout (значения компоузера)
 
@@ -49,6 +56,11 @@ struct MessagePublicationQuoteCardView: View {
         static let quoteFontSize: CGFloat = 110
         static let quoteOpacity: Double = 0.10
     }
+
+    /// Нижний паддинг карточки — сколько пустоты у неё есть под последней строкой
+    /// ответа. Ровно на столько пузырь ответа может лечь на карточку бесплатно,
+    /// не требуя резерва (см. `bottomReserve`).
+    static let contentBottomPadding: CGFloat = Layout.paddingVertical
 
     /// Ширина контента карточки: 236 − 2×22 = 192pt.
     ///
@@ -97,6 +109,7 @@ struct MessagePublicationQuoteCardView: View {
         content
             .padding(.horizontal, Layout.paddingHorizontal)
             .padding(.vertical, Layout.paddingVertical)
+            .padding(.bottom, bottomReserve)
             .frame(width: Layout.width, alignment: .leading)
             .background(cardGradient)
             .overlay(highlight.allowsHitTesting(false))

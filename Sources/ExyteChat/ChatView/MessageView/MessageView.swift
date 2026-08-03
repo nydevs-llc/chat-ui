@@ -31,6 +31,10 @@ struct MessageView: View {
     @State var statusSize: CGSize = .zero
     @State var timeSize: CGSize = .zero
     @State var bubbleSize: CGSize = .zero
+    /// Измеренный размер подвёрнутого пузыря ответа на публикацию-цитату.
+    /// Нужен ровно для одного — посчитать, на сколько нарастить карточку, чтобы
+    /// пузырь лёг на её пустоту, а не на текст ответа (`quoteCardBottomReserve`).
+    @State private var quoteReplyBubbleSize: CGSize = .zero
     static let widthWithMedia: CGFloat = 204
     static let horizontalNoAvatarPadding: CGFloat = 16 //or 8
     static let horizontalAvatarPadding: CGFloat = 8
@@ -41,9 +45,24 @@ struct MessageView: View {
     static let horizontalBubblePadding: CGFloat = 70
 
     // Композиция «ответ на публикацию-цитату» (макет)
+    //
+    // ⚠️ Значения — зеркало компоузера приложения (`SparkSecretReplyCardView`:
+    // `bubbleOverhang = 18`, `.offset(y: 14)`). Один и тот же секрет обязан
+    // выглядеть одинаково на экране отправки и в переписке, поэтому правка
+    // подворота обязана идти в оба места одним заходом.
     static let quoteCardWidth: CGFloat = 236
     /// На сколько пузырь ответа подвёрнут под нижнюю границу карточки.
-    static let quoteReplyTuck: CGFloat = 22
+    static let quoteReplyTuck: CGFloat = 14
+    /// На сколько пузырь ответа выходит за ЛЕВУЮ границу карточки.
+    ///
+    /// Влево в обе стороны переписки, а не зеркально по автору: пузырь висит на
+    /// карточке-цитате, а у карточки закрывающая кавычка нарисована в правом
+    /// нижнем углу — подворот справа накрывал бы именно её. Так же и в макете
+    /// («Ответ на секрет», `left: -6`), и в компоузере.
+    static let quoteReplyOverhang: CGFloat = 18
+    /// Просвет между последней строкой ответа и верхом пузыря: без него резерв
+    /// подводит текст ВПЛОТНУЮ к пузырю — формально не накрыт, читается слипшимся.
+    static let quoteReplyClearance: CGFloat = 10
     /// #FFCB52
     static let quoteReplyOutgoingTop = Color(red: 255 / 255, green: 203 / 255, blue: 82 / 255)
     /// #F0982B
@@ -222,9 +241,13 @@ struct MessageView: View {
     // MARK: - Publication quote card
 
     /// Карточка-цитата публикации + подвёрнутый снизу пузырь ответа. Пузырь лежит
-    /// ПОВЕРХ карточки и выходит за её левую (входящее) или правую (исходящее)
-    /// границу. Штатная подложка `bubbleBackground` здесь не применяется —
-    /// карточка сама себе фон.
+    /// ПОВЕРХ карточки и выходит за её ЛЕВУЮ границу — в обе стороны переписки,
+    /// как в компоузере и в макете. Штатная подложка `bubbleBackground` здесь
+    /// не применяется — карточка сама себе фон.
+    ///
+    /// Высота композиции = высота карточки + подворот, и подворот резервируется
+    /// только когда пузырь есть: у ответа без текста (например, голосом) лишние
+    /// 14pt под карточкой были бы мёртвой полосой в ленте.
     @ViewBuilder
     private func publicationQuoteComposition(
         _ message: Message,
@@ -234,24 +257,23 @@ struct MessageView: View {
             alignment: message.user.isCurrentUser ? .leading : .trailing,
             spacing: 0
         ) {
-            ZStack(alignment: .bottom) {
+            ZStack(alignment: .bottomLeading) {
                 MessagePublicationQuoteCardView(
                     attachment: publication,
-                    isOutgoing: message.user.isCurrentUser
+                    isOutgoing: message.user.isCurrentUser,
+                    bottomReserve: quoteCardBottomReserve(message)
                 )
-                .padding(.bottom, MessageView.quoteReplyTuck)
+                .padding(.bottom, message.text.isEmpty ? 0 : MessageView.quoteReplyTuck)
 
                 if !message.text.isEmpty {
-                    // Ширина строки = ширина карточки: пузырь обжимает свой текст
-                    // (Spacer добирает остаток), но перенос считается по 236pt,
-                    // а не по всей доступной ширине экрана.
-                    HStack(spacing: 0) {
-                        if message.user.isCurrentUser { Spacer(minLength: 0) }
-                        quoteReplyBubble(message)
-                        if !message.user.isCurrentUser { Spacer(minLength: 0) }
-                    }
-                    .frame(width: MessageView.quoteCardWidth)
-                    .offset(x: message.user.isCurrentUser ? 6 : -6)
+                    // Ширина строки = ширина карточки: пузырь обжимает свой текст,
+                    // но перенос считается по 236pt, а не по всей доступной
+                    // ширине экрана. `alignment: .leading` — чтобы короткая
+                    // реплика прижималась к левому краю карточки, а не центру.
+                    quoteReplyBubble(message)
+                        .sizeGetter($quoteReplyBubbleSize)
+                        .frame(maxWidth: MessageView.quoteCardWidth, alignment: .leading)
+                        .offset(x: -MessageView.quoteReplyOverhang)
                 }
             }
             .zIndex(0)
@@ -264,6 +286,26 @@ struct MessageView: View {
         .applyIf(isDisplayingMessageMenu) {
             $0.frameGetter($viewModel.messageFrame)
         }
+    }
+
+    /// Сколько пустоты добрать снизу карточки под пузырь ответа.
+    ///
+    /// Пузырь перекрывает карточку на `высота пузыря − подворот`. Первые
+    /// `contentBottomPadding` этого перекрытия бесплатны — там у карточки и так
+    /// пустой отступ; всё сверх того карточка обязана добрать, иначе пузырь
+    /// накрывает последнюю строку ответа. Однострочная реплика в отступ
+    /// укладывается и карточку не растит вовсе.
+    ///
+    /// До первого замера (`.zero`) резерв нулевой — кадр без реплики валиден сам
+    /// по себе, а `sizeGetter` доводит его на следующем проходе.
+    private func quoteCardBottomReserve(_ message: Message) -> CGFloat {
+        guard !message.text.isEmpty else { return 0 }
+        let overlap = quoteReplyBubbleSize.height - MessageView.quoteReplyTuck
+        return max(
+            0,
+            overlap + MessageView.quoteReplyClearance
+                - MessagePublicationQuoteCardView.contentBottomPadding
+        )
     }
 
     @ViewBuilder
