@@ -284,11 +284,23 @@ struct MessageView: View {
             spacing: 0
         ) {
             ZStack(alignment: .bottomLeading) {
-                MessagePublicationQuoteCardView(
-                    attachment: publication,
-                    isOutgoing: message.user.isCurrentUser,
-                    bottomReserve: quoteCardBottomReserve(message)
-                )
+                // Развилка ТОЛЬКО по самой карточке. Всё остальное — подворот,
+                // бабл, статус, бейдж-искра — общее: композиция настраивалась
+                // двумя кругами приёмки, и расщеплять её по видам нельзя.
+                Group {
+                    if publication.kind == .photo {
+                        MessageProfilePhotoCardView(
+                            attachment: publication,
+                            bottomReserve: quoteCardBottomReserve(message)
+                        )
+                    } else {
+                        MessagePublicationQuoteCardView(
+                            attachment: publication,
+                            isOutgoing: message.user.isCurrentUser,
+                            bottomReserve: quoteCardBottomReserve(message)
+                        )
+                    }
+                }
                 .padding(.bottom, quoteReplyTuck(message))
 
                 if !message.text.isEmpty {

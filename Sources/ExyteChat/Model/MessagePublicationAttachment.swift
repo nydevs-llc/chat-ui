@@ -17,6 +17,24 @@
 import Foundation
 
 public struct MessagePublicationAttachment {
+
+    /// Вид процитированного объекта.
+    ///
+    /// `nil` — публикация (включая секрет и ответ на вопрос дня): прежнее поведение,
+    /// развилка отрисовки идёт по `question`/`voice`. Остальные значения — элементы
+    /// чужой анкеты, у которых своего id нет: сервер адресует их парой
+    /// «получатель искры + вид».
+    public enum Kind: String {
+        /// Фото анкеты: рисуется САМО ПО СЕБЕ — ни заголовка, ни подписи
+        /// (решение владельца вопреки макету: в чат едет элемент, а не обвязка).
+        case photo
+        case notForMe = "not_for_me"
+        case dateIdeas = "date_ideas"
+    }
+
+    /// Вид элемента анкеты. `nil` у публикаций.
+    public let kind: Kind?
+
     public let id: Int
 
     /// Вопрос, на который отвечает публикация: текст секрета или вопрос дня.
@@ -106,6 +124,7 @@ public struct MessagePublicationAttachment {
     }
 
     public init(
+        kind: Kind? = nil,
         id: Int,
         question: String? = nil,
         text: String,
@@ -117,6 +136,7 @@ public struct MessagePublicationAttachment {
         onPlay: ((String) -> Void)? = nil,
         onPlaybackStarted: ((String) -> Void)? = nil
     ) {
+        self.kind = kind
         self.id = id
         self.question = question
         self.text = text
@@ -140,7 +160,11 @@ public struct MessagePublicationAttachment {
     /// Пустая строка вопроса считается отсутствием вопроса: бэкенд, отдавший `""`
     /// вместо `null`, не должен молча менять способ отрисовки.
     public var showsQuoteCard: Bool {
-        voice != nil || !(question ?? "").isEmpty
+        // Фото анкеты идёт большой карточкой всегда: у него нет ни вопроса, ни
+        // голоса, и по прежнему правилу оно молча уехало бы в компактную полоску,
+        // где картинку показать негде.
+        if kind == .photo { return true }
+        return voice != nil || !(question ?? "").isEmpty
     }
 
     /// Правило контента внутри карточки: голос вытесняет текст. Текст остаётся
