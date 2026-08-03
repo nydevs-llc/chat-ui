@@ -43,9 +43,22 @@ struct MessagePublicationQuoteCardView: View {
 
     private enum Layout {
         static let width: CGFloat = 236
+        /// Минимум высоты — тот же, что у компоузера (`cardHugMinHeight`).
+        ///
+        /// Без него короткая цитата («вопрос в строку + ответ в слово») давала
+        /// карточку ~150pt, кавычки в 110pt в углах налезали на текст, и один и
+        /// тот же секрет выглядел в переписке не так, как в ленте и компоузере.
+        static let minHeight: CGFloat = 236
         static let corner: CGFloat = 28
         static let paddingHorizontal: CGFloat = 22
-        static let paddingVertical: CGFloat = 30
+        /// Вертикальный отступ контента = видимая высота кавычки-глифа.
+        ///
+        /// ⚠️ НЕ равен компоузерным 30pt намеренно: там контент не упирается в
+        /// глифы, потому что карточка тянется к 408pt по макету, а здесь она
+        /// обнимает контент, и на длинной цитате текст входил бы прямо в
+        /// кавычку. Отступ держит текст ниже открывающей и выше закрывающей
+        /// при ЛЮБОЙ длине, а не только на короткой.
+        static let paddingVertical: CGFloat = 46
         static let accentLineWidth: CGFloat = 4
         /// Отступ вопроса от левой черты.
         static let questionSpacing: CGFloat = 10
@@ -110,7 +123,11 @@ struct MessagePublicationQuoteCardView: View {
             .padding(.horizontal, Layout.paddingHorizontal)
             .padding(.vertical, Layout.paddingVertical)
             .padding(.bottom, bottomReserve)
+            // `.leading` = прижать влево по горизонтали и ЦЕНТРИРОВАТЬ по
+            // вертикали: короткая цитата висит по центру карточки минимальной
+            // высоты, как на макете, а не липнет к верхней кавычке.
             .frame(width: Layout.width, alignment: .leading)
+            .frame(minHeight: Layout.minHeight, alignment: .leading)
             .background(cardGradient)
             .overlay(highlight.allowsHitTesting(false))
             .clipShape(RoundedRectangle(cornerRadius: Layout.corner, style: .continuous))
@@ -308,6 +325,76 @@ struct MessagePublicationQuoteCardView: View {
         return [attachment.accessibilityTitle, question ?? "", tail]
             .filter { !$0.isEmpty }
             .joined(separator: ". ")
+    }
+}
+
+// MARK: - Spark badge
+
+/// Кружок с искрой в левом верхнем углу пузыря ответа — метка «это ответ-спарк
+/// на цитату», из макета («Ответ на секрет», кружок 28pt со звездой 15pt).
+///
+/// Заливка тёмная в ОБЕИХ темах — так в макете и на светлом, и на тёмном
+/// варианте: кружок читается как «дырка» в пузыре, а не как элемент темы.
+struct SparkReplyBadge: View {
+
+    private enum Layout {
+        static let diameter: CGFloat = 28
+        static let star: CGFloat = 15
+    }
+
+    /// #141416
+    private static let background = Color(red: 20 / 255, green: 20 / 255, blue: 22 / 255)
+    /// #FFCB52 — та же вершина градиента, что у пузыря.
+    private static let star = Color(red: 255 / 255, green: 203 / 255, blue: 82 / 255)
+    /// #F0982B × 0.95 — свечение из макета.
+    private static let glow = Color(red: 240 / 255, green: 152 / 255, blue: 43 / 255).opacity(0.95)
+
+    var body: some View {
+        Circle()
+            .fill(Self.background)
+            .frame(width: Layout.diameter, height: Layout.diameter)
+            .overlay(
+                SparkStarShape()
+                    .fill(Self.star)
+                    .frame(width: Layout.star, height: Layout.star)
+            )
+            .shadow(color: Self.glow, radius: 6, y: 4)
+            .accessibilityHidden(true)
+    }
+}
+
+/// Четырёхлучевая звезда макета — ломаная из восьми точек в системе 24×24
+/// (`M12 2 l1.7 6.1 L20 10 …`), масштабируемая под любой размер.
+struct SparkStarShape: Shape {
+
+    private static let points: [CGPoint] = [
+        CGPoint(x: 12, y: 2),
+        CGPoint(x: 13.7, y: 8.1),
+        CGPoint(x: 20, y: 10),
+        CGPoint(x: 13.7, y: 11.9),
+        CGPoint(x: 12, y: 18),
+        CGPoint(x: 10.3, y: 11.9),
+        CGPoint(x: 4, y: 10),
+        CGPoint(x: 10.3, y: 8.1)
+    ]
+
+    func path(in rect: CGRect) -> Path {
+        let scaleX = rect.width / 24
+        let scaleY = rect.height / 24
+        var path = Path()
+        for (index, point) in Self.points.enumerated() {
+            let scaled = CGPoint(
+                x: rect.minX + point.x * scaleX,
+                y: rect.minY + point.y * scaleY
+            )
+            if index == 0 {
+                path.move(to: scaled)
+            } else {
+                path.addLine(to: scaled)
+            }
+        }
+        path.closeSubpath()
+        return path
     }
 }
 

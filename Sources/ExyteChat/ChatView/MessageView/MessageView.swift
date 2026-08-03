@@ -51,18 +51,44 @@ struct MessageView: View {
     // выглядеть одинаково на экране отправки и в переписке, поэтому правка
     // подворота обязана идти в оба места одним заходом.
     static let quoteCardWidth: CGFloat = 236
-    /// На сколько пузырь ответа подвёрнут под нижнюю границу карточки.
-    static let quoteReplyTuck: CGFloat = 14
+    /// На сколько пузырь ответа НАЕЗЖАЕТ на карточку снизу.
+    ///
+    /// Фиксируется именно перекрытие, а не «сколько висит ниже»: по макету
+    /// пузырь лежит на самом краю карточки и уходит вниз всей остальной высотой,
+    /// поэтому от числа строк в реплике должен меняться свес, а не наезд.
+    /// Константный свес (как было) на однострочной реплике загонял пузырь
+    /// внутрь карточки, на двухстрочной — наоборот, отрывал.
+    static let quoteReplyOverlap: CGFloat = 20
     /// На сколько пузырь ответа выходит за ЛЕВУЮ границу карточки.
     ///
     /// Влево в обе стороны переписки, а не зеркально по автору: пузырь висит на
     /// карточке-цитате, а у карточки закрывающая кавычка нарисована в правом
     /// нижнем углу — подворот справа накрывал бы именно её. Так же и в макете
     /// («Ответ на секрет», `left: -6`), и в компоузере.
-    static let quoteReplyOverhang: CGFloat = 18
+    ///
+    /// Значение из макета (`left: -6`), а НЕ компоузерные 18: у входящего
+    /// сообщения карточка стоит в 30pt от края экрана, и 18 + 8 под бейдж-искру
+    /// выносили кружок за экран. 6 + 8 = 14 держат его на виду в обе стороны.
+    static let quoteReplyOverhang: CGFloat = 6
     /// Просвет между последней строкой ответа и верхом пузыря: без него резерв
     /// подводит текст ВПЛОТНУЮ к пузырю — формально не накрыт, читается слипшимся.
     static let quoteReplyClearance: CGFloat = 10
+    /// Колонка справа, которую пузырь не занимает, — там живёт закрывающая
+    /// кавычка карточки (глиф ~37pt + 10pt отступа от края).
+    ///
+    /// Без ограничения пузырь на длинной реплике дотягивался до правого края и
+    /// закрывал кавычку целиком: она ниже его верхней границы, потому что
+    /// карточка обнимает контент, а на макете кавычка в 150px торчит над
+    /// пузырём сама.
+    static let quoteGlyphColumn: CGFloat = 46
+    /// Ширина, по которой переносится текст пузыря ответа.
+    static let quoteReplyBubbleMaxWidth: CGFloat = quoteCardWidth - quoteGlyphColumn
+    /// Колонка справа внутри пузыря под галочки статуса: 14pt глифа + просвет.
+    ///
+    /// Просвет щедрый намеренно: галочки стоят на одной строке с текстом у
+    /// короткой реплики, и на 8pt они читались как «приклеенные» к последнему
+    /// слову — почти как часть слова.
+    static let quoteReplyStatusColumn: CGFloat = 28
     /// #FFCB52
     static let quoteReplyOutgoingTop = Color(red: 255 / 255, green: 203 / 255, blue: 82 / 255)
     /// #F0982B
@@ -263,7 +289,7 @@ struct MessageView: View {
                     isOutgoing: message.user.isCurrentUser,
                     bottomReserve: quoteCardBottomReserve(message)
                 )
-                .padding(.bottom, message.text.isEmpty ? 0 : MessageView.quoteReplyTuck)
+                .padding(.bottom, quoteReplyTuck(message))
 
                 if !message.text.isEmpty {
                     // Ширина строки = ширина карточки: пузырь обжимает свой текст,
@@ -272,7 +298,7 @@ struct MessageView: View {
                     // реплика прижималась к левому краю карточки, а не центру.
                     quoteReplyBubble(message)
                         .sizeGetter($quoteReplyBubbleSize)
-                        .frame(maxWidth: MessageView.quoteCardWidth, alignment: .leading)
+                        .frame(maxWidth: MessageView.quoteReplyBubbleMaxWidth, alignment: .leading)
                         .offset(x: -MessageView.quoteReplyOverhang)
                 }
             }
@@ -300,67 +326,113 @@ struct MessageView: View {
     /// по себе, а `sizeGetter` доводит его на следующем проходе.
     private func quoteCardBottomReserve(_ message: Message) -> CGFloat {
         guard !message.text.isEmpty else { return 0 }
-        let overlap = quoteReplyBubbleSize.height - MessageView.quoteReplyTuck
         return max(
             0,
-            overlap + MessageView.quoteReplyClearance
+            MessageView.quoteReplyOverlap + MessageView.quoteReplyClearance
                 - MessagePublicationQuoteCardView.contentBottomPadding
         )
     }
 
+    /// Свес пузыря ниже карточки = его высота минус фиксированный наезд.
+    ///
+    /// Пока высота не измерена (`.zero`) свеса нет: пузырь стоит по нижнему краю
+    /// карточки, следующий проход `sizeGetter` опускает его на место.
+    private func quoteReplyTuck(_ message: Message) -> CGFloat {
+        guard !message.text.isEmpty else { return 0 }
+        return max(0, quoteReplyBubbleSize.height - MessageView.quoteReplyOverlap)
+    }
+
+    /// Статус показывается только у своего сообщения — у чужого его нет вовсе,
+    /// и нижний отступ пузыря тогда обычный.
+    private func quoteReplyStatus(_ message: Message) -> Message.Status? {
+        message.user.isCurrentUser ? message.status : nil
+    }
+
+    /// Пузырь ответа. Статус — НЕ в потоке за текстом, а приколот к правому
+    /// нижнему углу пузыря, как в макете (`right: 16px; bottom: 3px`).
+    ///
+    /// Inline-статус вставал сразу за последним словом: на короткой реплике
+    /// («Hi ✓») он оказывался посреди пилюли и читался как часть текста, а на
+    /// многострочной — прыгал по длине последней строки. В углу он стоит на
+    /// одном месте при любой длине; место под него держит увеличенный нижний
+    /// отступ, поэтому текст на него не наезжает.
     @ViewBuilder
     private func quoteReplyBubble(_ message: Message) -> some View {
-        HStack(alignment: .lastTextBaseline, spacing: 8) {
-            Text(message.text)
-                .font(Font(font))
-                .foregroundColor(
-                    message.user.isCurrentUser
-                        ? MessageView.quoteReplyOutgoingText
-                        : theme.colors.textLightContext
-                )
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-
-            // Статус рисуем напрямую, а не через `messageTimeView()`: на оранжевой
-            // заливке нужен тёмный набор цветов из макета, а не `myMessageTime` темы.
-            if message.user.isCurrentUser, let status = message.status {
-                MessageStatusView(
-                    status: status,
-                    needsCapsule: false,
-                    colorSet: MessageStatusColorSet(
-                        sending: MessageView.quoteReplyOutgoingText.opacity(0.5),
-                        sent: MessageView.quoteReplyOutgoingText.opacity(0.5),
-                        received: MessageView.quoteReplyOutgoingText.opacity(0.5),
-                        read: MessageView.quoteReplyOutgoingText.opacity(0.5)
-                    ),
-                    onRetry: {
-                        if case let .error(draft) = status {
-                            viewModel.sendMessage(draft)
+        Text(message.text)
+            // На макете реплика набрана Manrope 700 против 600 у обычных
+            // сообщений — то есть на СТУПЕНЬ жирнее соседей, а не «жирная сама
+            // по себе». Приложение целиком на системном шрифте (из кастомных
+            // зарегистрирован только `LiberationSerif-Italic` под курсив ответа),
+            // где обычное сообщение — regular, поэтому ту же ступень даёт
+            // semibold. Кегль и Dynamic Type берём у темы, а не из макета:
+            // 15.5px мокапа — это те же 15pt чата.
+            .font(Font(UIFont.systemFont(ofSize: font.pointSize, weight: .semibold)))
+            // Цвет не зависит от стороны — заливка пузыря одна и та же
+            // (см. `quoteReplyBubbleFill`), а на оранжевом читается только
+            // тёмно-коричневый из макета.
+            .foregroundColor(MessageView.quoteReplyOutgoingText)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.leading, 14)
+            // Место под статус резервируется СПРАВА, а не снизу: тогда у
+            // однострочной реплики он встаёт в ту же строку (пилюля остаётся
+            // капсулой), а у многострочной — в правый нижний угол, к концу
+            // последней строки. Нижний резерв делал из «Ага» узкий высокий
+            // прямоугольник с галочками под словом.
+            .padding(.trailing, quoteReplyStatus(message) == nil ? 14 : 14 + MessageView.quoteReplyStatusColumn)
+            .padding(.vertical, 10)
+            .overlay(alignment: .bottomTrailing) {
+                if let status = quoteReplyStatus(message) {
+                    // Статус рисуем напрямую, а не через `messageTimeView()`: на
+                    // оранжевой заливке нужен тёмный набор цветов из макета,
+                    // а не `myMessageTime` темы.
+                    MessageStatusView(
+                        status: status,
+                        needsCapsule: false,
+                        colorSet: MessageStatusColorSet(
+                            sending: MessageView.quoteReplyOutgoingText.opacity(0.5),
+                            sent: MessageView.quoteReplyOutgoingText.opacity(0.5),
+                            received: MessageView.quoteReplyOutgoingText.opacity(0.5),
+                            read: MessageView.quoteReplyOutgoingText.opacity(0.5)
+                        ),
+                        onRetry: {
+                            if case let .error(draft) = status {
+                                viewModel.sendMessage(draft)
+                            }
                         }
-                    }
-                )
-                .alignmentGuide(.lastTextBaseline) { d in d[.bottom] }
+                    )
+                    .padding(.trailing, 12)
+                    // 11, а не «по нижнему краю»: у однострочной реплики
+                    // галочки так стоят по центру строки, у многострочной —
+                    // на уровне последней.
+                    .padding(.bottom, 11)
+                }
             }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(quoteReplyBubbleFill(message))
+        .background(MessageView.quoteReplyBubbleFill)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        // Бейдж — ПОСЛЕ `clipShape`: он по макету выступает за угол пузыря,
+        // внутри клипа его срезало бы вместе с ним.
+        .overlay(alignment: .topLeading) {
+            // −14 = ширина бейджа/2: его правый край встаёт ровно на левый край
+            // текста (у пузыря `.padding(.leading, 14)`), поэтому он не наезжает
+            // на первые буквы короткой реплики.
+            SparkReplyBadge()
+                .offset(x: -14, y: -12)
+        }
     }
 
-    @ViewBuilder
-    private func quoteReplyBubbleFill(_ message: Message) -> some View {
-        if message.user.isCurrentUser {
-            // Оранжевый градиент исходящего пузыря ответа на секрет (макет).
-            LinearGradient(
-                colors: [MessageView.quoteReplyOutgoingTop, MessageView.quoteReplyOutgoingBottom],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        } else {
-            theme.colors.friendMessage
-        }
-    }
+    /// Оранжевый градиент пузыря ответа на цитату — из макета, ОДИН на обе
+    /// стороны переписки.
+    ///
+    /// Не заливка темы у входящего: пузырь здесь не обычное сообщение, а метка
+    /// «ответ-спарк на эту цитату» — та же роль и та же карточка под ним в обе
+    /// стороны, поэтому и цвет один. Со светлой темой это тоже честнее: там
+    /// `friendMessage` почти сливался с фоном экрана.
+    private static let quoteReplyBubbleFill = LinearGradient(
+        colors: [MessageView.quoteReplyOutgoingTop, MessageView.quoteReplyOutgoingBottom],
+        startPoint: .top,
+        endPoint: .bottom
+    )
 
     @ViewBuilder
     func replyBubbleView(_ message: Message) -> some View {
