@@ -65,6 +65,12 @@ public struct Message: Identifiable, Hashable {
     public var isEncrypted: Bool
     public var isDeleted: Bool
     public var publicationAttachment: MessagePublicationAttachment?
+    /// Разрешение воспроизведения голосового СООБЩЕНИЯ (не карточки-цитаты).
+    ///
+    /// Задано — форк сам ничего не качает: `recording.url` приезжает уже готовым
+    /// локальным файлом из приложения. Не задано — прежнее поведение.
+    /// Из `==`/`hash` исключено намеренно, см. `MessageVoicePlayback`.
+    public var voicePlayback: MessageVoicePlayback?
     public var triggerRedraw: UUID?
     public var isStreaming: Bool
 
@@ -83,6 +89,7 @@ public struct Message: Identifiable, Hashable {
                 isEncrypted: Bool = false,
                 isDeleted: Bool = false,
                 publicationAttachment: MessagePublicationAttachment? = nil,
+                voicePlayback: MessageVoicePlayback? = nil,
                 isStreaming: Bool = false) {
 
         self.id = id
@@ -98,6 +105,7 @@ public struct Message: Identifiable, Hashable {
         self.isEncrypted = isEncrypted
         self.isDeleted = isDeleted
         self.publicationAttachment = publicationAttachment
+        self.voicePlayback = voicePlayback
         self.isStreaming = isStreaming
     }
 
@@ -202,6 +210,41 @@ public struct Recording: Codable, Hashable {
         self.mimeType = mimeType
         self.key = key
         self.iv = iv
+    }
+}
+
+/// Внешнее разрешение источника голосового сообщения.
+///
+/// Зеркалит договорённость `MessagePublicationAttachment`: форк не знает про
+/// файловый сервис, а ссылка на файл короткоживущая и в снапшот сообщения не
+/// попадает — персистится только `file_id`. Поэтому резолв (ссылка → скачивание →
+/// декод в m4a вне главного потока) живёт в приложении, а сюда приезжает уже
+/// готовый локальный файл в `recording.url`.
+///
+/// Ровно то же самое делать внутри форка нельзя: `RecordingPlayer.convertOGGIfNeeded`
+/// распознаёт ogg эвристикой и декодирует СИНХРОННО на главном потоке, то есть на
+/// удалённом URL это `Data(contentsOf:)` по сети из `body`.
+///
+/// Замыкания и `fileId` в `Message.==`/`hash` НЕ участвуют: приложение пересобирает
+/// их на каждом рендере ленты, и включение дребезжало бы список. Перерисовку по
+/// приезду файла обеспечивает `recording.url`, который в `==` входит.
+public struct MessageVoicePlayback {
+
+    /// Идентификатор файла на бэкенде — единственное, что переживает кеш.
+    public let fileId: String
+    /// Тап по play, когда локального файла ещё нет. Форк в этот момент не играет.
+    public let onPlay: (String) -> Void
+    /// Звук фактически пошёл (playhead сдвинулся), а не «файл отдали плееру».
+    public let onPlaybackStarted: ((String) -> Void)?
+
+    public init(
+        fileId: String,
+        onPlay: @escaping (String) -> Void,
+        onPlaybackStarted: ((String) -> Void)? = nil
+    ) {
+        self.fileId = fileId
+        self.onPlay = onPlay
+        self.onPlaybackStarted = onPlaybackStarted
     }
 }
 

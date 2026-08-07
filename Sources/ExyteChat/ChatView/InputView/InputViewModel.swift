@@ -25,7 +25,16 @@ final class InputViewModel: ObservableObject {
     @Published var mentions: [MentionedUser] = []
     @Published var caretPosition: Int = 0
 
-    var recordingPlayer: RecordingPlayer?
+    /// Плеер предпрослушивания записи.
+    ///
+    /// Владеет им вью-модель, а не `InputView`. Раньше плеер был `@StateObject`
+    /// внутри `InputView` и попадал сюда из его `.onAppear` — но `ChatView` при
+    /// заданном `inputViewBuilder` штатный `InputView` вообще не создаёт, и в
+    /// приложениях с кастомной панелью ввода поле навсегда оставалось `nil`:
+    /// `.playRecord` переключал `state` (иконка на паузу), но плеер не звал.
+    /// Владение вью-моделью убирает сам класс ошибки — плеер существует всегда,
+    /// независимо от того, какое вью отрисовано.
+    let recordingPlayer = RecordingPlayer()
     var didSendMessage: ((DraftMessage) -> Void)?
 
     private var recorder = Recorder()
@@ -34,15 +43,25 @@ final class InputViewModel: ObservableObject {
 
     private var recordPlayerSubscription: AnyCancellable?
     private var playerStateSubscription: AnyCancellable?
+    private var playerProgressSubscription: AnyCancellable?
     private var subscriptions = Set<AnyCancellable>()
 
     func onStart() {
         subscribeValidation()
         subscribePicker()
+        // Привязка плеера живёт здесь, а не в `InputView.onAppear`: `onStart` —
+        // единственная пара к `onStop`, которую `ChatView` зовёт для ОБЕИХ веток
+        // `inputView` (и для штатного `InputView`, и для кастомного
+        // `inputViewBuilder`), так что прогресс и состояние доезжают до панели
+        // ввода приложения так же, как до библиотечной.
+        bindToRecordingPlayerState()
     }
 
     func onStop() {
         subscriptions.removeAll()
+        // Симметрично `onStart`: уходя с экрана, гасим воспроизведение —
+        // иначе превью продолжало бы играть поверх следующего экрана.
+        unbindRecordingPlayer()
     }
 
     func reset() {
@@ -60,7 +79,24 @@ final class InputViewModel: ObservableObject {
 
     func send() {
         recorder.stopRecording()
-        recordingPlayer?.reset()
+        // Конвертация в Opus/OGG живёт в ветке `.stopRecordAudio`. Если отправка
+        // пришла напрямую из состояния записи (минуя стоп), файл остался сырым
+        // m4a/AAC, а MIME на приёмнике по умолчанию "audio/ogg" — получилось бы
+        // сообщение с враньём в типе. Конвертируем, если этого ещё не сделали.
+        if let recording = attachments.recording, recording.mimeType != "audio/ogg" {
+            guard let oggUrl = recorder.convertLastRecordingToOGG() else {
+                // Конвертация не удалась: нельзя ни отправить сырой m4a под видом
+                // OGG (тихо портит файл на приёмнике), ни отправить его без
+                // изменений — плеер получателя всё равно ждёт OGG. Прерываем
+                // отправку и возвращаем пользователя в состояние "есть запись",
+                // чтобы можно было попробовать снова, а не терять сообщение молча.
+                state = .hasRecording
+                return
+            }
+            attachments.recording?.url = oggUrl
+            attachments.recording?.mimeType = "audio/ogg"
+        }
+        recordingPlayer.reset()
         sendMessage()
             .store(in: &subscriptions)
     }
@@ -111,20 +147,25 @@ final class InputViewModel: ObservableObject {
                 }
                 state = .hasRecording
             }
-            recordingPlayer?.reset()
+            recordingPlayer.reset()
         case .deleteRecord:
             unsubscribeRecordPlayer()
             recorder.stopRecording()
             attachments.recording = nil
+            // `unsubscribeRecordPlayer` обнуляет плеер только если тот играл:
+            // запись, выброшенная с паузы посередине, оставила бы прогресс
+            // застывшим — и следующее превью открылось бы с уже закрашенной
+            // до середины волной.
+            attachments.playbackProgress = 0
         case .playRecord:
             state = .playingRecording
             if let recording = attachments.recording {
                 subscribeRecordPlayer()
-                recordingPlayer?.togglePlay(recording)
+                recordingPlayer.togglePlay(recording)
             }
         case .pauseRecord:
             state = .pausedRecording
-            recordingPlayer?.pause()
+            recordingPlayer.pause()
         case .saveEdit:
             saveEditingClosure?(text)
             reset()
@@ -153,10 +194,8 @@ final class InputViewModel: ObservableObject {
     }
     
     func bindToRecordingPlayerState() {
-        guard let recordingPlayer else { return }
-        
         playerStateSubscription?.cancel()
-        
+
         playerStateSubscription = recordingPlayer.$playing
             .sink { [weak self] isPlaying in
                 guard let self else { return }
@@ -166,15 +205,34 @@ final class InputViewModel: ObservableObject {
                     self.state = .pausedRecording
                 }
             }
+
+        // Прогресс воспроизведения — тем же каналом, что и состояние: кастомный
+        // `inputViewBuilder` получает только `attachments`, `state` и `text`,
+        // поэтому единственный способ показать бегущую полоску в панели ввода
+        // приложения — положить долю проигранного в `attachments`.
+        // `removeDuplicates` гасит холостые перерисовки: наблюдатель плейхеда
+        // тикает каждые 0.2 с и на паузе отдаёт одно и то же значение, а любая
+        // запись в `attachments` дёргает валидацию черновика.
+        playerProgressSubscription?.cancel()
+
+        playerProgressSubscription = recordingPlayer.$progress
+            .removeDuplicates()
+            .sink { [weak self] progress in
+                self?.attachments.playbackProgress = progress
+            }
     }
-    
+
     func unbindRecordingPlayer() {
         if state == .playingRecording || state == .pausedRecording {
-            recordingPlayer?.reset()
+            recordingPlayer.reset()
             state = .pausedRecording
         }
-        
+
         playerStateSubscription = nil
+        playerProgressSubscription = nil
+        // Подписки больше нет — обнуление плеера до неё не дойдёт, а панель
+        // ввода осталась бы с застывшей закрашенной волной.
+        attachments.playbackProgress = 0
     }
 
 }
@@ -221,7 +279,7 @@ private extension InputViewModel {
     }
 
     func subscribeRecordPlayer() {
-        recordPlayerSubscription = recordingPlayer?.didPlayTillEnd
+        recordPlayerSubscription = recordingPlayer.didPlayTillEnd
             .sink { [weak self] in
                 self?.state = .hasRecording
             }
@@ -229,8 +287,8 @@ private extension InputViewModel {
 
     func unsubscribeRecordPlayer() {
         recordPlayerSubscription = nil
-        if recordingPlayer?.playing == true {
-            recordingPlayer?.reset()
+        if recordingPlayer.playing {
+            recordingPlayer.reset()
         }
     }
 }

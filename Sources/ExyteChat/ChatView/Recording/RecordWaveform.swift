@@ -148,6 +148,87 @@ struct RecordWaveformWithButtons: View {
     }
 }
 
+/// Голосовое СООБЩЕНИЕ в пузыре.
+///
+/// Полный аналог `PublicationVoicePill` для карточки-цитаты, только источник —
+/// `Message.voicePlayback`. Пока приложение не отдало локальный файл
+/// (`recording.url == nil`), тап уходит наружу и запоминается как намерение;
+/// как только файл приезжает, штатный плеер стартует сам.
+///
+/// Без `playback` (никто не передал разрешение) ведёт себя ровно как раньше:
+/// `onPlayTap == nil`, играет `RecordingPlayer` по тому URL, что дали.
+struct VoiceMessagePlayerView: View {
+
+    let recording: Recording
+    let playback: MessageVoicePlayback?
+
+    let colorButton: Color
+    let colorButtonBg: Color
+    let colorWaveform: Color
+
+    /// Поднимается ТОЛЬКО явным тапом при отсутствующем файле, гасится приездом
+    /// файла либо таймаутом. Ячейка, приехавшая на экран с готовым файлом, молчит.
+    @State private var pendingPlayAfterResolve = false
+    @State private var resolveTimeoutTask: Task<Void, Never>?
+
+    /// Столько ждём файл, прежде чем молча погасить намерение.
+    /// Строго больше бюджета цепочки резолва в приложении (15 с) — плюс запас на
+    /// переотдачу сообщения в ленту и реконфиг ячейки. Та же величина, что у
+    /// карточки-цитаты (`MessagePublicationQuoteCardView`).
+    private static let resolveTimeout: TimeInterval = 18
+
+    /// Перехват тапа нужен ровно до приезда файла: дальше играет штатный плеер,
+    /// а значит паузы и возобновления идут мимо приложения.
+    private var playTapOverride: (() -> Void)? {
+        guard let playback, recording.url == nil else { return nil }
+        return {
+            pendingPlayAfterResolve = true
+            playback.onPlay(playback.fileId)
+            startResolveTimeout()
+        }
+    }
+
+    var body: some View {
+        RecordWaveformWithButtons(
+            recording: recording,
+            colorButton: colorButton,
+            colorButtonBg: colorButtonBg,
+            colorWaveform: colorWaveform,
+            onPlayTap: playTapOverride,
+            pendingPlayAfterResolve: playback != nil ? $pendingPlayAfterResolve : nil,
+            onPlaybackStarted: playback.flatMap { playback in
+                playback.onPlaybackStarted.map { report in { report(playback.fileId) } }
+            }
+        )
+        .onChange(of: recording.url) { newURL in
+            // Файл приехал — ждать больше нечего. Сам старт делает
+            // `RecordWaveformWithButtons`, здесь только снимаем таймер.
+            if newURL != nil { cancelResolveTimeout() }
+        }
+        .onDisappear {
+            cancelResolveTimeout()
+            pendingPlayAfterResolve = false
+        }
+    }
+
+    private func startResolveTimeout() {
+        resolveTimeoutTask?.cancel()
+        resolveTimeoutTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(Self.resolveTimeout * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            // Молча: повторный тап никто не запрещает, а об ошибке пользователю
+            // сообщает приложение (снекбар), не форк.
+            pendingPlayAfterResolve = false
+            resolveTimeoutTask = nil
+        }
+    }
+
+    private func cancelResolveTimeout() {
+        resolveTimeoutTask?.cancel()
+        resolveTimeoutTask = nil
+    }
+}
+
 struct RecordWaveformPlaying: View {
 
     var samples: [CGFloat] // 0...1

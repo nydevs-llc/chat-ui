@@ -14,6 +14,24 @@ final class Recorder {
     // duration and waveform samples
     typealias ProgressHandler = (Double, [CGFloat]) -> Void
 
+    /// Пауза между активацией входного маршрута и началом записи в файл.
+    ///
+    /// `setActive(true)` только ЗАПУСКАЕТ вход; первые буферы, которые отдаёт
+    /// HAL, содержат переходный процесс тракта (замер на реальных записях
+    /// симулятора: широкополосный всплеск 6–50 мс с пиком −30 dBFS при уровне
+    /// соседних участков −85…−100 dBFS — это и есть слышимый «пшик»). Дальше
+    /// AGC ещё ~100 мс отдаёт почти нули.
+    ///
+    /// 0.1 с — вдвое больше измеренной длительности всплеска и при этом не
+    /// съедает речь: в эти 100 мс микрофон физически не отдаёт валидный сигнал,
+    /// так что терять нечего — вопрос только в том, попадёт ли мусор в файл.
+    private static let inputWarmUp: TimeInterval = 0.1
+
+    /// Шаг опроса metering. Один сэмпл в секунду (было) — это одна полоска волны
+    /// в секунду: первую секунду записи волна стоит на месте. 0.06 с совпадает с
+    /// дейтинговым `VoiceRecorderService`, где волна визуально плотная.
+    private static let meteringInterval: TimeInterval = 0.06
+
     private let audioSession = AVAudioSession()
     private var audioRecorder: AVAudioRecorder?
     private var audioTimer: Timer?
@@ -56,17 +74,42 @@ final class Recorder {
         do {
             try audioSession.setCategory(.record, mode: .default)
             try audioSession.setActive(true)
-            audioRecorder = try AVAudioRecorder(url: recordingUrl, settings: settings)
-            audioRecorder?.isMeteringEnabled = true
-            audioRecorder?.record()
+            let recorder = try AVAudioRecorder(url: recordingUrl, settings: settings)
+            audioRecorder = recorder
+            recorder.isMeteringEnabled = true
+
+            // `prepareToRecord()` обязателен по двум причинам. Первая: только
+            // после него `deviceCurrentTime` определён (до подготовки часы
+            // устройства читать нельзя). Вторая: он создаёт файл и поднимает
+            // очередь заранее, поэтому старт по расписанию ниже точен.
+            guard recorder.prepareToRecord() else {
+                stopRecording()
+                return nil
+            }
+
+            // Старт по расписанию, а не `record()`. `AudioQueueStart` запускает
+            // устройство немедленно и лишь ОТКРЫВАЕТ поток в файл в назначенный
+            // момент — тракт успевает устояться «вхолостую», и переходный
+            // процесс в файл не попадает. `record()` пишет с первого же буфера.
+            guard recorder.record(atTime: recorder.deviceCurrentTime + Self.inputWarmUp) else {
+                stopRecording()
+                return nil
+            }
             durationProgressHandler(0.0, [])
 
             NotificationCenter.default.post(name: .recordingStarted, object: self)
 
             DispatchQueue.main.async { [weak self] in
-                self?.audioTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+                guard let self else { return }
+                let timer = Timer(timeInterval: Self.meteringInterval, repeats: true) { [weak self] _ in
                     self?.onTimer(durationProgressHandler)
                 }
+                // `.common`, а не `scheduledTimer` (тот встаёт в `.default`).
+                // На секундном шаге это было незаметно, но 16 тиков в секунду
+                // обязаны идти и во время трекинга жеста, иначе волна замирает
+                // ровно на то время, пока палец держит кнопку записи.
+                RunLoop.main.add(timer, forMode: .common)
+                self.audioTimer = timer
             }
 
             return recordingUrl
@@ -77,15 +120,18 @@ final class Recorder {
     }
 
     func onTimer(_ durationProgressHandler: @escaping ProgressHandler) {
-        audioRecorder?.updateMeters()
-        if let power = audioRecorder?.averagePower(forChannel: 0) {
-            // power from 0 db (max) to -60 db (roughly min)
-            let adjustedPower = 1 - (max(power, -60) / 60 * -1)
-            soundSamples.append(CGFloat(adjustedPower))
-        }
-        if let time = audioRecorder?.currentTime {
-            durationProgressHandler(time, soundSamples)
-        }
+        guard let audioRecorder else { return }
+        // До назначенного момента старта запись ещё не идёт: метр отдал бы
+        // −160 dB «тишины», которой в файле нет, а `currentTime` — ноль.
+        // Полоску за этот тик не рисуем, чтобы волна не начиналась с провала.
+        guard audioRecorder.isRecording, audioRecorder.currentTime > 0 else { return }
+
+        audioRecorder.updateMeters()
+        let power = audioRecorder.averagePower(forChannel: 0)
+        // power from 0 db (max) to -60 db (roughly min)
+        let adjustedPower = 1 - (max(power, -60) / 60 * -1)
+        soundSamples.append(CGFloat(adjustedPower))
+        durationProgressHandler(audioRecorder.currentTime, soundSamples)
     }
 
     func stopRecording() {

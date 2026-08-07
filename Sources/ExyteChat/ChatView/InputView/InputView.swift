@@ -84,6 +84,16 @@ public struct InputViewAttachments {
     public var recording: Recording?
     public var replyMessage: ReplyMessage?
     public var editingMessage: ReplyMessage?
+    /// Доля проигранного в предпрослушивании записи, 0…1.
+    ///
+    /// Транзиентное состояние UI, а НЕ часть черновика: в `DraftMessage` не
+    /// уезжает и в `Recording` (она `Codable`/`Hashable` и сериализуется) не
+    /// живёт. Лежит здесь потому, что `attachments` — единственный канал,
+    /// который `ChatView` отдаёт кастомному `inputViewBuilder`: без этого поля
+    /// панель ввода приложения не может закрасить волну и показать проигранное
+    /// время. Обновляется подпиской на `RecordingPlayer.$progress`
+    /// (`InputViewModel.bindToRecordingPlayerState`).
+    public var playbackProgress: Double = 0
 }
 
 struct InputView: View {
@@ -98,7 +108,30 @@ struct InputView: View {
     var availableInput: AvailableInputType
     var messageUseMarkdown: Bool
 
-    @StateObject var recordingPlayer = RecordingPlayer()
+    /// Плеер предпрослушивания — владеет им вью-модель (см. `InputViewModel`).
+    /// Здесь он наблюдается, а не создаётся: вью читает из него `secondsLeft` и
+    /// `progress`, и без `@ObservedObject` перерисовки по их изменению не будет.
+    /// Экземпляр берётся из вью-модели, которая живёт в `ChatView` как
+    /// `@StateObject`, — так что при пересоздании `InputView` плеер тот же самый
+    /// и воспроизведение не рвётся.
+    @ObservedObject var recordingPlayer: RecordingPlayer
+
+    init(
+        mentionsViewModel: MentionsSuggestionsViewModel,
+        viewModel: InputViewModel,
+        inputFieldId: UUID,
+        style: InputViewStyle,
+        availableInput: AvailableInputType,
+        messageUseMarkdown: Bool
+    ) {
+        self.mentionsViewModel = mentionsViewModel
+        self.viewModel = viewModel
+        self.inputFieldId = inputFieldId
+        self.style = style
+        self.availableInput = availableInput
+        self.messageUseMarkdown = messageUseMarkdown
+        self.recordingPlayer = viewModel.recordingPlayer
+    }
 
     private var onAction: (InputViewAction) -> Void {
         viewModel.inputViewAction()
@@ -148,13 +181,9 @@ struct InputView: View {
         }
         .background(backgroundColor)
         .animation(.easeInOut(duration: 0.25), value: mentionsViewModel.isVisible)
-        .onAppear {
-            viewModel.recordingPlayer = recordingPlayer
-            viewModel.bindToRecordingPlayerState()
-        }
-        .onDisappear {
-            viewModel.unbindRecordingPlayer()
-        }
+        // Привязка/отвязка плеера переехала в `InputViewModel.onStart/onStop`:
+        // они вызываются `ChatView` для обеих веток `inputView`, а это вью в
+        // конфигурации с кастомным `inputViewBuilder` не создаётся вовсе.
     }
 
     @ViewBuilder

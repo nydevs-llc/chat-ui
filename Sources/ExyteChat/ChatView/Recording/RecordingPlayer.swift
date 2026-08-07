@@ -163,6 +163,14 @@ final class RecordingPlayer: ObservableObject {
     
     private func play() {
         guard !playing else { return }
+        // Категорию сессии выставляем СИНХРОННО и ровно перед стартом.
+        //
+        // `Recorder` оставляет сессию в `.record` — в этой категории вывод звука
+        // выключен. Асинхронный `initializePlayer()` ставит `.playback` только
+        // из `prepareForPlayback()`, а тот триггерится статусом `.readyToPlay`,
+        // то есть заведомо ПОЗЖЕ этого `player.play()`. Предпрослушивание
+        // только что записанного сообщения из-за этого стартовало немым.
+        activatePlaybackSession()
         player?.play()
         playing = true
         NotificationCenter.default.post(name: .audioPlaybackStarted, object: self)
@@ -265,6 +273,26 @@ private extension RecordingPlayer {
             try audioSession.setActive(true)
         } catch {
             print("Failed to activate audio session: \(error.localizedDescription)")
+        }
+    }
+
+    /// Синхронно переводит сессию в `.playback` и активирует её.
+    ///
+    /// Отдельно от `initializePlayer()` именно потому, что тот асинхронный:
+    /// на пути «записал → нажал play» между `player.play()` и уходом работы на
+    /// глобальную очередь есть окно, в котором категория ещё `.record`, и звука
+    /// нет. Здесь платим за синхронный вызов на главном потоке — но только в
+    /// момент старта воспроизведения, а не на каждом кадре.
+    ///
+    /// `overrideOutputAudioPort` сюда не переносим: он валиден только для
+    /// `.playAndRecord`, в `.playback` бросает `-50` и увёл бы нас в
+    /// `handleAudioSessionError` на ровном месте.
+    func activatePlaybackSession() {
+        do {
+            try audioSession.setCategory(.playback, mode: .default)
+            try audioSession.setActive(true)
+        } catch {
+            print("Failed to switch audio session to playback: \(error.localizedDescription)")
         }
     }
     

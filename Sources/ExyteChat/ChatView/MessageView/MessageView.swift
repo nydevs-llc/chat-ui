@@ -231,12 +231,24 @@ struct MessageView: View {
                 }
                 
                 if let recording = message.recording {
-                    VStack(alignment: .trailing, spacing: 8) {
-                        recordingView(recording)
-                        messageTimeView()
-                            .padding(.bottom, 8)
-                            .padding(.trailing, 12)
-                    }
+                    // Статус НАКЛАДЫВАЕТСЯ на блок записи, а не идёт следующей
+                    // строкой стека. Длительность внутри `recordingView` стоит
+                    // внизу СЛЕВА, справа от неё пусто — туда и садится галочка,
+                    // визуально на одной строке с длительностью.
+                    //
+                    // Прежний `VStack` отдавал статусу отдельную строку: пузырь
+                    // становился выше на целую строку, а галочка висела под
+                    // волной сама по себе и читалась как чужеродный элемент.
+                    recordingView(recording)
+                        .padding(.bottom, 10)
+                        .overlay(alignment: .bottomTrailing) {
+                            // Отступы больше, чем у текстового пузыря: там статус
+                            // стоит в потоке за текстом, а здесь висит в углу, где
+                            // скругление съедает видимое расстояние до края.
+                            messageTimeView()
+                                .padding(.trailing, MessageView.horizontalTextPadding)
+                                .padding(.bottom, 6)
+                        }
                 }
                 
                 if message.type == .document {
@@ -560,8 +572,12 @@ struct MessageView: View {
 
     @ViewBuilder
     func recordingView(_ recording: Recording) -> some View {
-        RecordWaveformWithButtons(
+        // Через `VoiceMessagePlayerView`, а не напрямую: у голосового сообщения
+        // источник резолвит приложение (`Message.voicePlayback`). Без разрешения
+        // вью прозрачна — играет тот же `RecordWaveformWithButtons`, что и раньше.
+        VoiceMessagePlayerView(
             recording: recording,
+            playback: message.voicePlayback,
             colorButton: message.user.isCurrentUser ? theme.colors.myMessage : .white,
             colorButtonBg: message.user.isCurrentUser ? .white : theme.colors.myMessage,
             colorWaveform: message.user.isCurrentUser ? theme.colors.textDarkContext : theme.colors.textLightContext
