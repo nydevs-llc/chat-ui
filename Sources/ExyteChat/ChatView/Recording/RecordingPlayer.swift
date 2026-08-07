@@ -376,7 +376,20 @@ private extension RecordingPlayer {
             try audioSession.setCategory(.playback, mode: .default)
             try audioSession.setActive(true)
         } catch {
-            print("Failed to switch audio session to playback: \(error.localizedDescription)")
+            // Дефект 2, п.4 (P10 follow-up): именно от этого catch зависит,
+            // будет ли слышен звук — `play()` вызывает эту функцию и
+            // безусловно продолжает (`player?.play(); playing = true`), не
+            // проверяя результат. Оставляем такое поведение (не блокируем
+            // playback на любой ошибке сессии: часть таких ошибок исторически
+            // не мешала реальному звуку, а жёсткий блок на каждый чих —
+            // отдельная смена политики, шире этой узкой задачи), но
+            // перестаём делать провал неотличимым от штатной работы: печатаем
+            // с деталями И валим DEBUG/тестовую сборку через
+            // `assertionFailure`, чтобы это гарантированно всплыло на QA/CI,
+            // а не терялось в консоли рядом с шумом AVFoundation. В релизе
+            // `assertionFailure` — no-op, поведение не меняется.
+            print("RecordingPlayer: failed to switch audio session to .playback: \(error.localizedDescription)")
+            assertionFailure("RecordingPlayer: setCategory(.playback)/setActive(true) failed: \(error)")
         }
     }
 

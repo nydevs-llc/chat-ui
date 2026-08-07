@@ -32,7 +32,18 @@ final class Recorder {
     /// дейтинговым `VoiceRecorderService`, где волна визуально плотная.
     private static let meteringInterval: TimeInterval = 0.06
 
-    private let audioSession = AVAudioSession()
+    // Дефект 2, п.2 (P10 follow-up): было `AVAudioSession()` — тот же класс
+    // бага, что и в `RecordingPlayer` до предыдущего раунда: приватный
+    // инстанс не влиял на реальную сессию приложения, поэтому `setCategory`
+    // ниже был no-op, а запись работала лишь потому, что общая сессия и так
+    // была пригодна для входа. Пока `RecordingPlayer` тоже был no-op, это
+    // было симметрично и безобидно. Как только `RecordingPlayer` стал
+    // реально переключать сессию в `.playback` (предыдущий раунд P10), эта
+    // асимметрия превратилась в регрессию: `.playback` отключает вход, и
+    // ничто не возвращало сессию обратно к записи — микрофон записывал бы
+    // тишину сразу после прослушивания голосового. Теперь оба класса
+    // работают с ОДНОЙ реальной сессией.
+    private let audioSession = AVAudioSession.sharedInstance()
     private var audioRecorder: AVAudioRecorder?
     private var audioTimer: Timer?
 
@@ -72,6 +83,20 @@ final class Recorder {
         m4aRecordingUrl = recordingUrl
 
         do {
+            // Дефект 2, п.2 (P10 follow-up): выставляется БЕЗУСЛОВНО на каждый
+            // старт записи, а не только если категория «ещё не та» — сессия
+            // после прослушивания голосового будет `.playback` (вход выключен),
+            // и полагаться, что кто-то её уже вернул, нельзя.
+            //
+            // `.record`, а не `.playAndRecord`: запись голосового в чате не
+            // проигрывает звук одновременно с захватом — `.playAndRecord`
+            // добавил бы неиспользуемый выходной тракт и потребовал бы решать
+            // маршрутизацию (`.defaultToSpeaker` и т.п.), которую здесь
+            // некому конфигурировать осмысленно. Обратный порядок (запись →
+            // сразу воспроизведение) уже закрыт независимо:
+            // `RecordingPlayer.play()` синхронно зовёт `activatePlaybackSession()`
+            // и сам переключает категорию перед стартом — именно ради этого
+            // случая, см. комментарий там же.
             try audioSession.setCategory(.record, mode: .default)
             try audioSession.setActive(true)
             let recorder = try AVAudioRecorder(url: recordingUrl, settings: settings)
@@ -114,6 +139,14 @@ final class Recorder {
 
             return recordingUrl
         } catch {
+            // Дефект 2, п.4 (P10 follow-up): раньше падение здесь молчало
+            // полностью (даже без print) — единственным следом была
+            // необъяснённая невозможность начать запись. Именно от этого
+            // catch зависит, будет ли вообще звук на входе, поэтому ошибку
+            // печатаем явно; функция и так безопасно возвращает `nil`
+            // (запись не начинается вместо начала записи тишины).
+            print("Recorder: failed to configure audio session or start recording: \(error.localizedDescription)")
+            assertionFailure("Recorder: setCategory(.record)/setActive(true) or AVAudioRecorder setup failed: \(error)")
             stopRecording()
             return nil
         }
