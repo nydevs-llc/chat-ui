@@ -262,6 +262,21 @@ struct MessageView: View {
                             .padding(.trailing, 12)
                     }
                 }
+
+                // Дефект 3 (P10): у голосового текст пустой по конструкции — если
+                // `recording` по любой причине `nil` (расхождение кеша, провал
+                // encode и т.п.), НИ ОДНА из веток выше не срабатывает, стек
+                // остаётся пустым, и `bubbleBackground` тоже не рисует заливку
+                // (см. её собственное условие) — сообщение существует в списке,
+                // но занимает 0pt высоты: выглядит как полностью пропавшее.
+                // Плейсхолдер здесь чисто графический (иконка, без текста):
+                // у форка нет доступа к нашей локализации на 6 языков, а любой
+                // хардкод видимого текста в форке запрещён. Смысл — сделать
+                // потерю ВИДИМОЙ, а не восстановить содержимое (сам фикс кеша —
+                // отдельная задача).
+                if !MessageView.hasRenderableContent(message) {
+                    missingContentPlaceholderView()
+                }
             }
             .bubbleBackground(message, theme: theme)
             .zIndex(0)
@@ -274,6 +289,37 @@ struct MessageView: View {
         .applyIf(isDisplayingMessageMenu) {
             $0.frameGetter($viewModel.messageFrame)
         }
+    }
+
+    /// Дефект 3 (P10): true, если хотя бы одна ветка `standardBubbleView` ниже
+    /// нарисует что-то видимое. Список условий продублирован намеренно, а не
+    /// вынесен в общий helper — правки этого списка (новый тип вложения) и так
+    /// требуют трогать оба места одновременно, дублирование делает пропуск
+    /// заметным при ревью, а не молчаливым.
+    static func hasRenderableContent(_ message: Message) -> Bool {
+        !message.attachments.isEmpty
+            || message.publicationAttachment != nil
+            || message.type == .geo
+            || !message.text.isEmpty
+            || message.recording != nil
+            || message.type == .document
+    }
+
+    /// Нейтральный ГРАФИЧЕСКИЙ плейсхолдер без текста — умышленно: у форка нет
+    /// нашей локализации на 6 языков, а хардкод видимой строки здесь запрещён.
+    /// Задача — не восстановить содержимое (это отдельный фикс кеша), а не дать
+    /// пузырю схлопнуться в 0pt, из-за чего потеря вложения выглядела как
+    /// полное исчезновение сообщения.
+    @ViewBuilder
+    private func missingContentPlaceholderView() -> some View {
+        Image(systemName: "questionmark.circle")
+            .font(.system(size: 20, weight: .medium))
+            .frame(width: 44, height: 44)
+            .overlay(alignment: .bottomTrailing) {
+                messageTimeView()
+                    .padding(.trailing, MessageView.horizontalTextPadding)
+                    .padding(.bottom, 6)
+            }
     }
 
     // MARK: - Publication quote card
@@ -619,7 +665,16 @@ public extension View {
             .frame(width: message.attachments.isEmpty ? nil : MessageView.widthWithMedia + additionalMediaInset)
             .foregroundColor(message.user.isCurrentUser ? (isReply ? theme.colors.textMyReply : theme.colors.textDarkContext) : theme.colors.textLightContext)
             .background {
-                if isReply || !message.text.isEmpty || message.recording != nil {
+                // Дефект 3 (P10): исходное условие не учитывало ни attachments,
+                // ни publicationAttachment, ни .geo/.document — для них фон и
+                // раньше не рисовался (собственная подложка/полноразмерная
+                // медиа). Добавлен ровно один новый случай: контента нет
+                // ВООБЩЕ (та самая потеря вложения) — тогда фон обязан
+                // появиться, иначе графический плейсхолдер из
+                // `missingContentPlaceholderView()` окажется на прозрачном
+                // 44×44 пятне без пузыря.
+                if isReply || !message.text.isEmpty || message.recording != nil
+                    || !MessageView.hasRenderableContent(message) {
                     if message.user.isCurrentUser && !isReply {
                         if let myMessageGradient = theme.colors.myMessageGradient {
                             // Тема-драйвен градиент исходящего пузыря (дизайн-макет).
