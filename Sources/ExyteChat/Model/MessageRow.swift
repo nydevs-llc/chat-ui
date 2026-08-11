@@ -79,6 +79,12 @@ struct MessageRow: Equatable {
         // `publicationAttachment.voice.url` не доедет до уже отрисованной ячейки:
         // плеер так и останется без ссылки, пока ячейку не передёрнут скроллом.
         && lhs.message.publicationAttachment == rhs.message.publicationAttachment
+        // То же самое для голосового СООБЩЕНИЯ: его `recording.url` тоже
+        // приезжает резолвом уже после первой отрисовки (nil → локальный m4a).
+        // Без этой строки ячейка не реконфигурируется, вьюха остаётся со
+        // снимком `url == nil`, отложенный старт не срабатывает — и кнопка play
+        // выглядит мёртвой, хотя файл давно скачан и лежит в словаре.
+        && lhs.message.recording == rhs.message.recording
     }
 }
 

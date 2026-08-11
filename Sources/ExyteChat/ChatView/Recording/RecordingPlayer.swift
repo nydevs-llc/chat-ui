@@ -46,11 +46,47 @@ final class RecordingPlayer: ObservableObject {
     // ждать точного совпадения с `item.duration`.
     private let endOfTrackEpsilon: Double = 0.2
 
+    /// Старт уже идёт, но `playing` ещё не выставлен.
+    ///
+    /// `play()` при позиции у конца трека домматывает до нуля АСИНХРОННО и зовёт
+    /// `startPlayback()` только из completion — а `playing = true` живёт внутри
+    /// `startPlayback()`. Между входом в `play()` и приходом completion флаг
+    /// `playing` всё ещё `false`, поэтому `guard !playing` пропускает второй
+    /// вызов: планируются два seek'а, оба зовут `startPlayback()`, и запись
+    /// звучит дважды внахлёст. Этот флаг закрывает окно.
+    private var isStartingPlayback = false
+
     deinit {
+        // Плеер переживает свою вьюху: SwiftUI пересоздаёт строку списка при
+        // переотдаче сообщения (например, когда доезжает резолвнутый URL), и
+        // `@StateObject` предыдущего поколения уничтожается. Без явной паузы
+        // осиротевший `AVPlayer` доигрывает запись до конца — звук идёт, а
+        // управлять им уже нечем: на экране новый плеер с `playing == false`.
+        player?.pause()
+        if let timeObserver {
+            player?.removeTimeObserver(timeObserver)
+        }
         removeAllNotificationObservers()
     }
 
     // MARK: - Public Methods
+
+    /// Безусловный старт — для отложенного запуска, где намерение уже известно.
+    ///
+    /// `togglePlay` здесь семантически неверен: он ТУМБЛЕР, и на уже играющем
+    /// плеере ставит паузу. Отложенный старт может прийти повторно (перерисовка,
+    /// пересоздание строки, повторный `onAppear`), и тумблер в этом месте
+    /// глушил бы только что запущенное воспроизведение.
+    func startPlaying(_ recording: Recording) {
+        if self.recording?.url != recording.url {
+            self.recording = recording
+            if let url = recording.url {
+                setupPlayer(for: url, trackDuration: recording.duration)
+            }
+        }
+        guard !playing else { return }
+        play()
+    }
 
     func togglePlay(_ recording: Recording) {
         if self.recording?.url != recording.url {
@@ -67,6 +103,9 @@ final class RecordingPlayer: ObservableObject {
     }
 
     func pause() {
+        // Снимаем и «старт в полёте»: пауза во время асинхронного seek'а иначе
+        // оставила бы флаг поднятым навсегда и заблокировала все следующие play().
+        isStartingPlayback = false
         player?.pause()
         playing = false
     }
@@ -83,6 +122,9 @@ final class RecordingPlayer: ObservableObject {
         if playing {
             pause()
         }
+        // `pause()` выше зовётся только при `playing` — а сброс может прийти и
+        // посреди старта, когда `playing` ещё false. Снимаем флаг безусловно.
+        isStartingPlayback = false
         recording = nil
         secondsLeft = 0.0
         progress = 0
@@ -95,6 +137,11 @@ final class RecordingPlayer: ObservableObject {
         progress = 0.0
         secondsLeft = trackDuration
         removeAllNotificationObservers()
+        // Обнулить ссылку недостаточно: наблюдатель остаётся зарегистрированным
+        // в старом плеере и продолжает тикать. Снимаем его до замены item'а.
+        if let timeObserver {
+            player?.removeTimeObserver(timeObserver)
+        }
         timeObserver = nil
         player?.replaceCurrentItem(with: nil)
 
@@ -215,7 +262,8 @@ final class RecordingPlayer: ObservableObject {
     }
 
     private func play() {
-        guard !playing else { return }
+        guard !playing, !isStartingPlayback else { return }
+        isStartingPlayback = true
         // Категорию сессии выставляем СИНХРОННО и ровно перед стартом.
         //
         // `Recorder` оставляет сессию в `.record` — в этой категории вывод звука
@@ -245,6 +293,7 @@ final class RecordingPlayer: ObservableObject {
     }
 
     private func startPlayback() {
+        isStartingPlayback = false
         player?.play()
         playing = true
         NotificationCenter.default.post(name: .audioPlaybackStarted, object: self)

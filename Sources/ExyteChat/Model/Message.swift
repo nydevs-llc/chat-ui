@@ -236,15 +236,35 @@ public struct MessageVoicePlayback {
     public let onPlay: (String) -> Void
     /// Звук фактически пошёл (playhead сдвинулся), а не «файл отдали плееру».
     public let onPlaybackStarted: ((String) -> Void)?
+    /// Пользователь уже нажал play и ждёт файл — намерение со стороны приложения.
+    ///
+    /// Форк держит такую же защёлку в `@State`, но она умирает вместе со строкой
+    /// списка, которую SwiftUI пересоздаёт как раз в момент прихода файла: новая
+    /// вьюха рождается с готовым `url`, перехода значения нет, `onChange` не
+    /// срабатывает — и тап пропадает. Приложение хранит намерение по `file_id`,
+    /// поэтому оно переживает пересоздание, и вьюха стартует по `onAppear`.
+    ///
+    /// `false` у тех, кто про механику не знает: поведение прежнее.
+    public let isPlayPending: Bool
+    /// Погасить намерение на стороне приложения.
+    ///
+    /// Без него защёлка односторонняя: форк гасит только свою `@State`-половину,
+    /// `isPlayPending` остаётся `true`, и отложенный старт срабатывает снова на
+    /// каждой перерисовке — воспроизведение перезапускается по кругу.
+    public let onPlayPendingResolved: ((String) -> Void)?
 
     public init(
         fileId: String,
         onPlay: @escaping (String) -> Void,
-        onPlaybackStarted: ((String) -> Void)? = nil
+        onPlaybackStarted: ((String) -> Void)? = nil,
+        isPlayPending: Bool = false,
+        onPlayPendingResolved: ((String) -> Void)? = nil
     ) {
         self.fileId = fileId
         self.onPlay = onPlay
         self.onPlaybackStarted = onPlaybackStarted
+        self.isPlayPending = isPlayPending
+        self.onPlayPendingResolved = onPlayPendingResolved
     }
 }
 

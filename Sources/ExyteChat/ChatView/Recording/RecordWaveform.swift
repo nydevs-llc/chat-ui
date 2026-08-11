@@ -105,13 +105,18 @@ struct RecordWaveformWithButtons: View {
             // Ссылка доехала после того, как пользователь нажал play, — стартуем
             // сами. Для штатных голосовых `recording.url` не меняется, а
             // `pendingPlayAfterResolve` не передан, так что путь мёртв.
-            guard newURL != nil,
-                  pendingPlayAfterResolve?.wrappedValue == true,
-                  !recordPlayer.playing else { return }
-            pendingPlayAfterResolve?.wrappedValue = false
-            var resolved = recording
-            resolved.url = newURL
-            recordPlayer.togglePlay(resolved)
+            startPendingPlaybackIfNeeded(url: newURL)
+        }
+        .onAppear {
+            // Тот же отложенный старт, но для случая, когда `onChange` физически
+            // не может сработать: приложение переотдаёт сообщение с резолвнутым
+            // URL, SwiftUI пересоздаёт строку, и НОВОЕ поколение вьюхи рождается
+            // сразу с непустым `recording.url`. Перехода значения нет — значит
+            // нет и `onChange`, а тап пользователя остался бы без звука.
+            //
+            // Условие то же самое, поэтому двойного старта не будет: защёлка
+            // `pendingPlayAfterResolve` одноразовая и гасится внутри.
+            startPendingPlaybackIfNeeded(url: recording.url)
         }
         .onChange(of: recordPlayer.progress) { progress in
             // `onPlaybackStarted` в guard первым: у штатных голосовых он nil, и
@@ -145,6 +150,25 @@ struct RecordWaveformWithButtons: View {
             didReportPlaybackStart = true
             onPlaybackStarted()
         }
+    }
+
+    /// Отложенный старт: пользователь нажал play, когда файла ещё не было.
+    ///
+    /// Зовётся из двух мест — `onChange(of: recording.url)` (ссылка доехала в
+    /// живую вьюху) и `onAppear` (вьюха пересоздана и родилась уже с готовым
+    /// URL, поэтому перехода значения не будет). Идемпотентна: защёлка
+    /// одноразовая, а `recordPlayer.playing` отсекает повторный заход.
+    private func startPendingPlaybackIfNeeded(url: URL?) {
+        guard let url,
+              pendingPlayAfterResolve?.wrappedValue == true,
+              !recordPlayer.playing else { return }
+        pendingPlayAfterResolve?.wrappedValue = false
+        var resolved = recording
+        resolved.url = url
+        // Безусловный старт, НЕ тумблер: сюда можно прийти повторно (перерисовка
+        // или новый `onAppear` до того, как намерение погасло на стороне
+        // приложения), и `togglePlay` заглушил бы только что стартовавший звук.
+        recordPlayer.startPlaying(resolved)
     }
 }
 
@@ -188,6 +212,26 @@ struct VoiceMessagePlayerView: View {
         }
     }
 
+    /// Намерение сыграть: своё (`@State`) ИЛИ пришедшее от приложения.
+    ///
+    /// Своё живёт ровно до пересоздания строки, а пересоздание случается как раз
+    /// на приезде файла — поэтому в одиночку оно ненадёжно. Приложение держит то
+    /// же намерение по `file_id`, и оно переживает любое число пересозданий.
+    /// Запись `false` обязана гасить ОБЕ стороны. Иначе защёлка односторонняя:
+    /// `get` продолжит возвращать `true` из `isPlayPending`, отложенный старт
+    /// сработает снова на следующей же перерисовке — и так по кругу.
+    private var pendingPlayBinding: Binding<Bool> {
+        Binding(
+            get: { pendingPlayAfterResolve || (playback?.isPlayPending ?? false) },
+            set: { newValue in
+                pendingPlayAfterResolve = newValue
+                if !newValue, let playback, playback.isPlayPending {
+                    playback.onPlayPendingResolved?(playback.fileId)
+                }
+            }
+        )
+    }
+
     var body: some View {
         RecordWaveformWithButtons(
             recording: recording,
@@ -195,7 +239,7 @@ struct VoiceMessagePlayerView: View {
             colorButtonBg: colorButtonBg,
             colorWaveform: colorWaveform,
             onPlayTap: playTapOverride,
-            pendingPlayAfterResolve: playback != nil ? $pendingPlayAfterResolve : nil,
+            pendingPlayAfterResolve: playback != nil ? pendingPlayBinding : nil,
             onPlaybackStarted: playback.flatMap { playback in
                 playback.onPlaybackStarted.map { report in { report(playback.fileId) } }
             }
