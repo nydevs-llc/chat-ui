@@ -71,19 +71,20 @@ struct RecordWaveformWithButtons: View {
     /// «старт» улетал бы десятками раз за трек.
     @State private var didReportPlaybackStart = false
 
-    /// Аварийный выход из спиннера: `true` — сдались, рисуем треугольник, даже
-    /// если формально всё ещё «грузимся».
+    /// Что рисует кнопка play прямо сейчас. Единственный источник истины для
+    /// иконки — см. `VoicePlaybackPhase`.
     ///
-    /// Нужен, потому что второе окно `isBuffering` (`playing && progress == 0`)
-    /// не закрыто ничем. Таймаут в `VoiceMessagePlayerView` гасит только
-    /// намерение (первое окно); если плеер уже стартовал, а item оказался
-    /// `.failed` — статус там свой, приватный, и наружу не идёт (см.
-    /// `RecordingPlayer:186`, где ошибка уходит в `print`) — то `progress`
-    /// не тикнет никогда, `playing` останется `true`, и спиннер будет крутиться
-    /// вечно. До этой правки та же ситуация просто рисовала паузу при тишине.
-    @State private var bufferingGaveUp = false
+    /// Раньше состояние кнопки вычислялось из пары `recordPlayer.playing` /
+    /// `recordPlayer.progress`, и это был не промах в условии, а ошибка уровнем
+    /// выше: обе величины описывают ВОСПРОИЗВЕДЕНИЕ, а спиннер — про ЗАГРУЗКУ,
+    /// у которой в этой вьюхе владельца не было. Из-за этого «уже доиграли»
+    /// (`playing == false, progress == 0` после перемотки в начало) выглядело
+    /// ровно как «ещё не начали», и спиннер возвращался на доигранном треке,
+    /// вися до срабатывания предохранителя. Теперь фаза хранится явно и меняется
+    /// только по событиям, а «доиграли» — отдельное состояние `finished`.
+    @State private var phase: VoicePlaybackPhase = .idle
 
-    /// Таймер, который поднимает `bufferingGaveUp`. Перезапускается на каждом
+    /// Таймер, который переводит фазу в `gaveUp`. Перезапускается на каждом
     /// входе в буферизацию, снимается при появлении звука.
     @State private var bufferingTimeoutTask: Task<Void, Never>?
 
@@ -91,52 +92,31 @@ struct RecordWaveformWithButtons: View {
         return max(Int((recordPlayer.secondsLeft != 0 ? recordPlayer.secondsLeft : recording.duration)), 0)
     }
 
-    /// Тап был, но звук ещё не пошёл — кнопка показывает спиннер вместо иконки.
+    /// Единственная точка, где меняется фаза кнопки.
     ///
-    /// Без него секундная пауза между тапом и звуком (presigned URL → скачивание
-    /// .ogg → декод в m4a) выглядела как незасчитанный тап: пользователь жал
-    /// повторно или считал плеер сломанным.
-    ///
-    /// Складывается из ДВУХ окон, потому что ни одно поодиночке не покрывает
-    /// задержку целиком:
-    ///
-    /// 1. `pendingPlayAfterResolve` — от тапа до приезда `recording.url`. Гаснет
-    ///    в `startPendingPlaybackIfNeeded` ПЕРЕД стартом плеера, то есть до того,
-    ///    как пошёл звук: декод и подготовка item'а ещё впереди.
-    /// 2. `playing && progress == 0` — от старта плеера до первого тика playhead.
-    ///
-    /// Условие снятия — `progress > 0`, а НЕ `playing`, и это принципиально: тот
-    /// же выбор и по той же причине, что у `onPlaybackStarted` выше.
-    /// `RecordingPlayer.play()` поднимает `playing` без единой проверки статуса
-    /// item'а, поэтому протухшая ссылка или провал декода дают `playing == true`
-    /// вообще без звука — гасив спиннер по `playing`, мы бы показали паузу при
-    /// полной тишине ровно на плохой сети, ради которой всё и делается.
-    ///
-    /// Вычисляемое, а не `@State`, намеренно. В момент переотдачи сообщения живо
-    /// два поколения вьюхи (см. `startPendingPlaybackIfNeeded`), и собственный
-    /// `@State` каждого умер бы вместе с ним: спиннер моргнул бы и исчез на
-    /// самом интересном месте. Оба слагаемых живут снаружи — намерение в
-    /// приложении по `file_id`, `progress` в плеере, — и пересоздание переживают.
-    ///
-    /// Штатные голосовые (`pendingPlayAfterResolve == nil`, файл уже локальный)
-    /// в первое окно не попадают, а второе у них длится доли секунды.
-    private var isBuffering: Bool {
-        guard !bufferingGaveUp else { return false }
-        guard recordPlayer.progress == 0 else { return false }
-        return pendingPlayAfterResolve?.wrappedValue == true || recordPlayer.playing
+    /// Держим её одной функцией, чтобы переходы нельзя было раскидать по
+    /// обработчикам и потерять: всё, что вьюха наблюдает, превращается в событие
+    /// и уходит в `VoicePlaybackPhase.applying(_:)`, где переходы описаны
+    /// исчерпывающе. Таймер предохранителя синхронизируется здесь же — так
+    /// спиннер и таймер не могут разъехаться.
+    private func send(_ event: VoicePlaybackEvent) {
+        let next = phase.applying(event)
+        guard next != phase else { return }
+        phase = next
+        syncBufferingTimeout(next.showsSpinner)
     }
 
     var body: some View {
         HStack(spacing: 12) {
             Group {
-                if isBuffering {
+                if phase.showsSpinner {
                     // Тот же визуальный язык, что у голосовых в публикациях
                     // (`VoicePreviewPillView.playButton`): круг остаётся на месте,
                     // меняется только его содержимое.
                     ProgressView()
                         .progressViewStyle(.circular)
                         .tint(colorButton)
-                } else if recordPlayer.playing {
+                } else if phase.showsPauseIcon {
                     theme.images.message.pauseAudio
                         .renderingMode(.template)
                 } else {
@@ -148,12 +128,14 @@ struct RecordWaveformWithButtons: View {
             .viewSize(40)
             .circleBackground(colorButtonBg)
             .highPriorityGesture(TapGesture().onEnded {
-                // Новая попытка — новый спиннер. Без сброса защёлки повторный
-                // тап после сдачи не показал бы ничего (`isBuffering` выходит по
-                // первому же гарду, пока `progress` всё ещё 0) — то есть ровно
-                // тот незасчитанный тап, ради которого правка и делается,
-                // только на второй попытке.
-                bufferingGaveUp = false
+                // Тап — единственный сигнал, поднимающий спиннер после того, как
+                // запись уже прослушали: намерение из приложения в `finished`
+                // намеренно игнорируется (см. `VoicePlaybackPhase`).
+                //
+                // `isResolved` решает, будет ли спиннер вообще: готовый локальный
+                // файл стартует практически мгновенно, и спиннер на нём успел бы
+                // только моргнуть — это читается как дефект, а не как отзывчивость.
+                send(.tapped(isResolved: recording.url != nil))
                 if let onPlayTap {
                     onPlayTap()
                 } else {
@@ -204,24 +186,43 @@ struct RecordWaveformWithButtons: View {
             // Условие то же самое, поэтому двойного старта не будет: защёлка
             // `pendingPlayAfterResolve` одноразовая и гасится внутри.
             startPendingPlaybackIfNeeded(url: recording.url)
-            // Таймер сдачи — по той же причине, что и строкой выше: `onChange`
-            // ловит только ПЕРЕХОД, а новое поколение вьюхи рождается сразу в
-            // буферизации (намерение живёт в приложении и пересоздание
-            // переживает). Перехода нет — таймер бы не завёлся, и спиннер стал
-            // бы вечным ровно в том сценарии, ради которого предохранитель есть.
-            syncBufferingTimeout(isBuffering)
+            // Намерение, пережившее пересоздание строки, — по той же причине, что
+            // и строкой выше: `onChange` ловит только ПЕРЕХОД, а новое поколение
+            // вьюхи рождается сразу с поднятым намерением (оно живёт в приложении
+            // по `file_id`). Перехода нет — спиннер бы не завёлся там, где тап
+            // уже был.
+            if pendingPlayAfterResolve?.wrappedValue == true {
+                send(.pendingIntentObserved)
+            }
+        }
+        .onChange(of: pendingPlayAfterResolve?.wrappedValue ?? false) { isPending in
+            // Намерение подняло приложение (например, тап по кнопке-дублю в
+            // карточке). Своё `send(.tapped:)` из жеста выше идемпотентно с этим:
+            // повторный вход в `buffering` фазу не меняет.
+            guard isPending else { return }
+            send(.pendingIntentObserved)
         }
         .onChange(of: recordPlayer.progress) { progress in
+            // Playhead поехал — единственное надёжное доказательство, что звук
+            // реально идёт (`playing` поднимается и при протухшей ссылке).
+            // Двигает и фазу кнопки, и метрику: у обеих один и тот же критерий.
+            guard progress > 0 else { return }
+            send(.progressAdvanced)
+
             // `onPlaybackStarted` в guard первым: у штатных голосовых он nil, и
             // ветка выходит здесь же, не трогая `@State` и не вызывая перерисовку.
             guard let onPlaybackStarted,
                   !didReportPlaybackStart,
-                  progress > 0,
                   recordPlayer.playing else { return }
             didReportPlaybackStart = true
             onPlaybackStarted()
         }
         .onChange(of: recordPlayer.playing) { isPlaying in
+            // Плеер поднял/опустил `playing`. Сам по себе из буферизации не
+            // выводит — там ждём движения playhead, — но на готовом файле именно
+            // он переключает кнопку в паузу, не дожидаясь первого тика.
+            send(isPlaying ? .playerDidStart : .playerDidPause)
+
             // Новый заход воспроизведения — разрешаем отчёт снова (возобновление
             // после паузы считается новым стартом).
             //
@@ -234,24 +235,17 @@ struct RecordWaveformWithButtons: View {
             guard onPlaybackStarted != nil, isPlaying else { return }
             didReportPlaybackStart = false
         }
-        .onChange(of: isBuffering) { buffering in
-            // Единственная точка управления таймером сдачи: вход в спиннер —
-            // запуск, выход (звук пошёл, пауза, сдались) — снятие. Держим её
-            // на самом `isBuffering`, а не на его слагаемых, чтобы таймер и
-            // спиннер не могли разъехаться.
-            syncBufferingTimeout(buffering)
-        }
-        .onChange(of: recordPlayer.progress) { progress in
-            // Звук реально пошёл — снимаем защёлку сдачи, чтобы следующий тап
-            // (например, после паузы) снова мог показать спиннер.
-            guard progress > 0, bufferingGaveUp else { return }
-            bufferingGaveUp = false
-        }
         .onDisappear {
             cancelBufferingTimeout()
-            bufferingGaveUp = false
+            send(.disappeared)
         }
         .onReceive(recordPlayer.didPlayTillEnd) { _ in
+            // Трек доигран. Ради этого события и появился отдельный `finished`:
+            // плеер сейчас перемотает в начало (`playing = false, progress = 0`),
+            // и без явной фазы это состояние было бы неотличимо от «ещё не
+            // начали» — спиннер возвращался бы на доигранном треке.
+            send(.reachedEnd)
+
             // Фолбэк для очень коротких записей. Наблюдатель времени тикает раз
             // в 0.2 с, поэтому трек короче этого может дойти до конца, не дав ни
             // одного ненулевого `progress`, — звук прозвучал, а события бы не было.
@@ -271,17 +265,18 @@ struct RecordWaveformWithButtons: View {
     /// правка и убирает.
     private static let bufferingTimeout: TimeInterval = 6
 
-    /// Запускает таймер сдачи: если за `bufferingTimeout` звук так и не пошёл,
-    /// поднимает `bufferingGaveUp` — спиннер гаснет, возвращается треугольник,
-    /// повторный тап никто не запрещает.
+    /// Приводит таймер сдачи в соответствие фазе: крутим спиннер — тикает,
+    /// в любой другой фазе — снят. Зовётся из единственной точки (`send(_:)`),
+    /// поэтому таймер и картинка разъехаться не могут.
     ///
-    /// Гасит РОВНО картинку: `bufferingGaveUp = true`, и ничего больше.
-    /// Намерение (`pendingPlayAfterResolve`) не трогаем сознательно.
+    /// По истечении `bufferingTimeout` фаза уходит в `gaveUp`: спиннер гаснет,
+    /// возвращается треугольник, повторный тап никто не запрещает.
     ///
-    /// Штатная буферизация длится секунду-две, после чего звук идёт сам, —
-    /// сюда мы попадаем, только когда что-то уже пошло не так. Это предохранитель
-    /// от вечного спиннера, а не рядовая ветка, и вести себя он должен
-    /// минимально: снять зависшую анимацию, ни во что больше не вмешиваясь.
+    /// Гасит РОВНО картинку. Намерение (`pendingPlayAfterResolve`) не трогаем
+    /// сознательно, и это важно: штатная буферизация длится секунду-две, а сюда
+    /// мы попадаем, только когда что-то уже пошло не так. Это предохранитель, а
+    /// не рядовая ветка, и вести себя он должен минимально — снять зависшую
+    /// анимацию, ни во что больше не вмешиваясь.
     ///
     /// Снимать заодно намерение было бы вредно дважды. Во-первых, резолв в
     /// приложении к этому моменту жив и продолжается — файл, доехавший на 7-й
@@ -290,13 +285,10 @@ struct RecordWaveformWithButtons: View {
     /// приложение, и гасить его состояние по таймеру собственной анимации — это
     /// решать за него, когда сдаваться. Для этого у приложения есть свой бюджет
     /// (`VoiceMessagePlayerView.resolveTimeout`, 18 с) и свой снекбар об ошибке.
-    /// Приводит таймер в соответствие состоянию: буферизуемся — тикает, нет —
-    /// снят. Зовётся из `onChange` (штатный переход) и из `onAppear` (вьюха
-    /// пересоздана уже в буферизации, перехода не будет).
     ///
     /// Идемпотентна: повторный вызов при уже идущем таймере ничего не делает —
-    /// иначе `onAppear` перезапускал бы отсчёт на каждой перерисовке и отложил
-    /// бы сдачу до бесконечности, обнулив весь смысл предохранителя.
+    /// иначе отсчёт перезапускался бы на каждой перерисовке и отложил бы сдачу
+    /// до бесконечности, обнулив весь смысл предохранителя.
     private func syncBufferingTimeout(_ buffering: Bool) {
         guard buffering else {
             cancelBufferingTimeout()
@@ -311,8 +303,8 @@ struct RecordWaveformWithButtons: View {
         bufferingTimeoutTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: UInt64(Self.bufferingTimeout * 1_000_000_000))
             guard !Task.isCancelled else { return }
-            bufferingGaveUp = true
             bufferingTimeoutTask = nil
+            send(.bufferingTimedOut)
         }
     }
 
