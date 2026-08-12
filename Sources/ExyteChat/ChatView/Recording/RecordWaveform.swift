@@ -19,6 +19,10 @@ struct RecordWaveformWithButtons: View {
     var colorButton: Color
     var colorButtonBg: Color
     var colorWaveform: Color
+    /// Предел ширины волны. `nil` — прежнее поведение: волна занимает всю
+    /// доступную ширину. Задаётся там, где пузырь обязан обжимать содержимое
+    /// (голосовая искра), — иначе `GeometryReader` внутри растягивает его.
+    var maxWaveformWidth: CGFloat? = nil
     /// Внешний обработчик тапа по play. Когда задан — форк не проигрывает сам:
     /// URL короткоживущий и резолвится в приложении (карточка секрета).
     /// Штатные вызовы параметр не передают и работают как раньше.
@@ -94,7 +98,26 @@ struct RecordWaveformWithButtons: View {
             })
             
             VStack(alignment: .leading, spacing: 5) {
-                RecordWaveformPlaying(samples: recording.waveformSamples, progress: recordPlayer.progress, color: colorWaveform, addExtraDots: false)
+                // Узкий контейнер требует ДВУХ вещей сразу, и одного `frame` мало.
+                //
+                // `adjustedSamples` без `addExtraDots` прореживает волну под
+                // ширину ЭКРАНА, а не контейнера (см. комментарий там же), —
+                // поэтому при одном лишь `frame` волна продолжала рисоваться во
+                // всю ширину экрана и вылезала из пузыря: пунктир проходил под
+                // кнопкой play. Прореживаем сами через `downsampled(_:fitting:)`,
+                // ровно как предписывает контракт компонента, и только потом
+                // ограничиваем рамкой.
+                RecordWaveformPlaying(
+                    samples: maxWaveformWidth.map {
+                        RecordWaveformPlaying.downsampled(recording.waveformSamples, fitting: $0)
+                    } ?? recording.waveformSamples,
+                    progress: recordPlayer.progress,
+                    color: colorWaveform,
+                    addExtraDots: false
+                )
+                .applyIf(maxWaveformWidth != nil) {
+                    $0.frame(maxWidth: maxWaveformWidth)
+                }
                 Text(DateFormatter.timeString(duration))
                     .font(.caption2)
                     .monospacedDigit()
@@ -162,6 +185,17 @@ struct RecordWaveformWithButtons: View {
         guard let url,
               pendingPlayAfterResolve?.wrappedValue == true,
               !recordPlayer.playing else { return }
+        // Гасим намерение ПЕРЕД стартом, а не после.
+        //
+        // `recordPlayer` в гарде выше — свой у каждого поколения вьюхи, а их в
+        // момент переотдачи сообщения живо два: старое ещё не снесено, новое уже
+        // появилось. Про чужой `playing` ни одно из них не знает, к тому же
+        // `playing` поднимается только внутри `startPlayback()`, уже после
+        // асинхронного seek'а. Оба поколения проходили гард и стартовали свои
+        // плееры — запись играла дважды внахлёст.
+        //
+        // Общее у них ровно одно: намерение в приложении (по `file_id`). Сняв
+        // его первым же действием, мы закрываем гонку для всех поколений сразу.
         pendingPlayAfterResolve?.wrappedValue = false
         var resolved = recording
         resolved.url = url
@@ -185,6 +219,8 @@ struct VoiceMessagePlayerView: View {
 
     let recording: Recording
     let playback: MessageVoicePlayback?
+    /// См. `RecordWaveformWithButtons.maxWaveformWidth`.
+    var maxWaveformWidth: CGFloat? = nil
 
     let colorButton: Color
     let colorButtonBg: Color
@@ -238,6 +274,7 @@ struct VoiceMessagePlayerView: View {
             colorButton: colorButton,
             colorButtonBg: colorButtonBg,
             colorWaveform: colorWaveform,
+            maxWaveformWidth: maxWaveformWidth,
             onPlayTap: playTapOverride,
             pendingPlayAfterResolve: playback != nil ? pendingPlayBinding : nil,
             onPlaybackStarted: playback.flatMap { playback in

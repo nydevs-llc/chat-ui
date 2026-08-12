@@ -21,6 +21,11 @@ struct MessageProfilePhotoCardView: View {
     /// край карточки, и без резерва накрыл бы само фото.
     let bottomReserve: CGFloat
 
+    /// Ширина карточки нужна и снаружи: по ней считается предел переноса у
+    /// пузыря-реплики под фото (у него, в отличие от цитаты, нет колонки под
+    /// декоративную кавычку). Держим одним значением, чтобы не разъехались.
+    static let cardWidth: CGFloat = Layout.width
+
     private enum Layout {
         static let width: CGFloat = 244
         static let height: CGFloat = 300

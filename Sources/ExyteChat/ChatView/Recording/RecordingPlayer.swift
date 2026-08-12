@@ -248,6 +248,15 @@ final class RecordingPlayer: ObservableObject {
     /// no-op, а не повторным сбросом уже сброшенного состояния.
     private func handlePlaybackReachedEnd() {
         guard playing else { return }
+        // Плеер надо ОСТАНОВИТЬ, а не только пометить флагом.
+        //
+        // Сюда приходит и наблюдатель времени, который ловит «почти конец»
+        // (`duration - endOfTrackEpsilon`), то есть ДО реального конца файла —
+        // `AVPlayer` в этот момент ещё играет. Раньше код лишь сбрасывал
+        // `playing` и перематывал в ноль, а `seek(to: .zero)` на ИГРАЮЩЕМ плеере
+        // означает «играй с начала»: запись звучала второй раз подряд, причём
+        // кнопка оставалась в положении play, потому что флаг уже был `false`.
+        player?.pause()
         playing = false
         progress = 0
         secondsLeft = duration

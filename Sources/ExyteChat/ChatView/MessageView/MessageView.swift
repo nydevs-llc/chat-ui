@@ -81,8 +81,24 @@ struct MessageView: View {
     /// карточка обнимает контент, а на макете кавычка в 150px торчит над
     /// пузырём сама.
     static let quoteGlyphColumn: CGFloat = 46
-    /// Ширина, по которой переносится текст пузыря ответа.
+    /// Ширина, по которой переносится текст пузыря ответа НА ЦИТАТУ (секрет,
+    /// вопрос дня, публикация) — у такой карточки справа висит кавычка.
     static let quoteReplyBubbleMaxWidth: CGFloat = quoteCardWidth - quoteGlyphColumn
+    /// То же для ответа на ФОТО АНКЕТЫ.
+    ///
+    /// У фото-карточки декоративной кавычки нет вовсе, а сама она шире (244 против
+    /// 236), поэтому вычитать `quoteGlyphColumn` здесь не из чего: 46pt
+    /// резервировались впустую. Реплика «Привет, как дела?» из-за этого не влезала
+    /// в строку, промахиваясь на доли пункта (134.4pt текста при 134.0pt доступных),
+    /// и ломалась на две строки при явно свободном месте справа.
+    static let photoReplyBubbleMaxWidth: CGFloat = MessageProfilePhotoCardView.cardWidth
+    /// Всё, что в голосовом пузыре занимает ширину помимо самой волны:
+    /// кнопка play (40) + зазор `HStack` (12) + горизонтальные паддинги
+    /// `recordingView` (12 × 2). Считается по фактическим значениям, а не на глаз.
+    static let voiceBubbleChrome: CGFloat = 40 + 12 + horizontalTextPadding * 2
+    /// Пол ширины ВОЛНЫ — чтобы запись в секунду не схлопывалась в огрызок
+    /// вокруг кнопки: под волной ещё стоит таймер, ему нужна строка.
+    static let voiceWaveformMinWidth: CGFloat = 80
     /// Колонка справа внутри пузыря под галочки статуса: 14pt глифа + просвет.
     ///
     /// Просвет щедрый намеренно: галочки стоят на одной строке с текстом у
@@ -368,7 +384,19 @@ struct MessageView: View {
                     // реплика прижималась к левому краю карточки, а не центру.
                     quoteReplyBubble(message)
                         .sizeGetter($quoteReplyBubbleSize)
-                        .frame(maxWidth: MessageView.quoteReplyBubbleMaxWidth, alignment: .leading)
+                        .frame(maxWidth: replyBubbleMaxWidth(publication), alignment: .leading)
+                        .offset(x: -MessageView.quoteReplyOverhang)
+                } else if let recording = message.recording {
+                    // Голосовая искра. Без этой ветки запись просто пропадала:
+                    // текст у неё пуст по построению, ветка выше не срабатывала,
+                    // а `message.recording` в этой композиции не читался вовсе —
+                    // на экране оставалась одна карточка анкеты, и отправитель
+                    // видел «искра ушла, а сообщения нет».
+                    // Без внешнего `maxWidth`: ширину пузырь считает сам по длине
+                    // записи (`voiceBubbleContentWidth`), иначе волна растянулась
+                    // бы на всю карточку и вокруг неё осталась пустая заливка.
+                    quoteReplyVoiceBubble(recording, message)
+                        .sizeGetter($quoteReplyBubbleSize)
                         .offset(x: -MessageView.quoteReplyOverhang)
                 }
             }
@@ -394,8 +422,28 @@ struct MessageView: View {
     ///
     /// До первого замера (`.zero`) резерв нулевой — кадр без реплики валиден сам
     /// по себе, а `sizeGetter` доводит его на следующем проходе.
+    /// Ширина пузыря зависит от того, что под ним за карточка.
+    ///
+    /// У цитаты справа висит декоративная кавычка, и пузырь обязан оставить ей
+    /// колонку. У фото анкеты кавычки нет — там доступна вся ширина карточки.
+    private func replyBubbleMaxWidth(_ publication: MessagePublicationAttachment) -> CGFloat {
+        publication.kind == .photo
+            ? MessageView.photoReplyBubbleMaxWidth
+            : MessageView.quoteReplyBubbleMaxWidth
+    }
+
+    /// Есть ли под карточкой пузырь-реплика — текстовый ИЛИ голосовой.
+    ///
+    /// Вся геометрия композиции (резерв под карточкой, подворот) считалась по
+    /// `!text.isEmpty`, потому что другого вида реплики не существовало. У
+    /// голосовой искры текст пуст, и без этой развилки карточка не оставляла
+    /// места под пузырь, а пузырь не подворачивался ей под низ.
+    private func hasQuoteReply(_ message: Message) -> Bool {
+        !message.text.isEmpty || message.recording != nil
+    }
+
     private func quoteCardBottomReserve(_ message: Message) -> CGFloat {
-        guard !message.text.isEmpty else { return 0 }
+        guard hasQuoteReply(message) else { return 0 }
         return max(
             0,
             MessageView.quoteReplyOverlap + MessageView.quoteReplyClearance
@@ -408,7 +456,7 @@ struct MessageView: View {
     /// Пока высота не измерена (`.zero`) свеса нет: пузырь стоит по нижнему краю
     /// карточки, следующий проход `sizeGetter` опускает его на место.
     private func quoteReplyTuck(_ message: Message) -> CGFloat {
-        guard !message.text.isEmpty else { return 0 }
+        guard hasQuoteReply(message) else { return 0 }
         return max(0, quoteReplyBubbleSize.height - MessageView.quoteReplyOverlap)
     }
 
@@ -427,6 +475,83 @@ struct MessageView: View {
     /// одном месте при любой длине; место под него держит увеличенный нижний
     /// отступ, поэтому текст на него не наезжает.
     @ViewBuilder
+    /// Ширина содержимого голосовой искры — по длине записи, а не «на всю строку».
+    ///
+    /// Пузырь обязан обжимать содержимое, как текстовый: у трёхсекундной записи
+    /// волна занимала середину, а слева и справа оставалась пустая заливка на
+    /// всю ширину карточки. Само по себе это не лечится — волна живёт внутри
+    /// `GeometryReader`, а он всегда забирает ВСЁ предложенное место и своей
+    /// естественной ширины не имеет. Поэтому ширину задаём снаружи.
+    ///
+    /// Считаем по числу сэмплов той же формулой, что `RecordWaveformPlaying
+    /// .maxLength`, и добавляем колонки кнопки play и статуса. Потолок — ширина
+    /// карточки: длинная запись упирается в неё и дальше волна прореживается
+    /// сама (`adjustedSamples`). Минимум держит форму капсулы у совсем коротких.
+    private func voiceWaveformMaxWidth(_ recording: Recording) -> CGFloat {
+        // Естественная длина волны — та же формула, что у `RecordWaveformPlaying
+        // .maxLength`. Берём её, а не подобранное число: поменяются `spacing`
+        // или `width` полоски — ширина поедет за ними сама.
+        let natural = max(
+            0,
+            (RecordWaveform.spacing + RecordWaveform.width)
+                * CGFloat(recording.waveformSamples.count) - RecordWaveform.spacing
+        )
+        // Потолок — сколько остаётся от карточки после кнопки play и паддингов:
+        // длинная запись упирается в него, дальше волна прореживается сама.
+        let ceiling = MessageView.photoReplyBubbleMaxWidth - MessageView.voiceBubbleChrome
+        return min(ceiling, max(MessageView.voiceWaveformMinWidth, natural))
+    }
+
+    /// Голосовая искра: тот же пузырь, что и у текстовой, но с плеером внутри.
+    ///
+    /// Оформление повторяет `quoteReplyBubble` по частям, а не переиспользует его
+    /// целиком: там всё построено вокруг `Text` — резерв под статус СПРАВА в той
+    /// же строке, вертикальные паддинги под кегль. У плеера своя геометрия
+    /// (фиксированная высота, волна тянется по ширине), поэтому статус уезжает
+    /// под запись, а не в строку.
+    ///
+    /// Заливка, радиус и бейдж — те же константы: пузырь обязан читаться как
+    /// искра, независимо от того, текст в нём или запись.
+    private func quoteReplyVoiceBubble(_ recording: Recording, _ message: Message) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Предел ставится ВОЛНЕ, а не пузырю: у волны внутри `GeometryReader`,
+            // и только там её можно удержать. Ограничение снаружи ужимало
+            // `HStack` целиком — кнопка play уезжала за край, волну обрезало.
+            recordingView(recording, maxWaveformWidth: voiceWaveformMaxWidth(recording))
+
+            if let status = quoteReplyStatus(message) {
+                MessageStatusView(
+                    status: status,
+                    // Как и у текстовой искры: на золотой заливке капсула-подложка
+                    // не нужна, галочки читаются напрямую.
+                    needsCapsule: false,
+                    colorSet: MessageStatusColorSet(
+                        sending: MessageView.quoteReplyOutgoingText.opacity(0.5),
+                        sent: MessageView.quoteReplyOutgoingText.opacity(0.5),
+                        received: MessageView.quoteReplyOutgoingText.opacity(0.5),
+                        read: MessageView.quoteReplyOutgoingText.opacity(0.5)
+                    ),
+                    onRetry: {
+                        if case let .error(draft) = status {
+                            viewModel.sendMessage(draft)
+                        }
+                    }
+                )
+                .padding(.trailing, 12)
+                .padding(.bottom, 8)
+            }
+        }
+        .padding(.bottom, quoteReplyStatus(message) == nil ? 8 : 0)
+        // Никаких внешних `frame`: пузырь обжимает содержимое сам, ширину ему
+        // диктует ограниченная волна внутри.
+        .background(MessageView.quoteReplyBubbleFill)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(alignment: .topLeading) {
+            SparkReplyBadge()
+                .offset(x: -14, y: -12)
+        }
+    }
+
     private func quoteReplyBubble(_ message: Message) -> some View {
         Text(message.text)
             // На макете реплика набрана Manrope 700 против 600 у обычных
@@ -617,13 +742,14 @@ struct MessageView: View {
     }
 
     @ViewBuilder
-    func recordingView(_ recording: Recording) -> some View {
+    func recordingView(_ recording: Recording, maxWaveformWidth: CGFloat? = nil) -> some View {
         // Через `VoiceMessagePlayerView`, а не напрямую: у голосового сообщения
         // источник резолвит приложение (`Message.voicePlayback`). Без разрешения
         // вью прозрачна — играет тот же `RecordWaveformWithButtons`, что и раньше.
         VoiceMessagePlayerView(
             recording: recording,
             playback: message.voicePlayback,
+            maxWaveformWidth: maxWaveformWidth,
             colorButton: message.user.isCurrentUser ? theme.colors.myMessage : .white,
             colorButtonBg: message.user.isCurrentUser ? .white : theme.colors.myMessage,
             colorWaveform: message.user.isCurrentUser ? theme.colors.textDarkContext : theme.colors.textLightContext
