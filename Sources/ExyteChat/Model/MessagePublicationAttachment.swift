@@ -94,6 +94,43 @@ public struct MessagePublicationAttachment {
     /// внутри карточки бессмысленно.
     public var onPlaybackStarted: ((String) -> Void)?
 
+    /// Строки слайда «кино и музыка»: трек и фильм заполняются в анкете
+    /// независимо, и цитируется слайд ЦЕЛИКОМ.
+    ///
+    /// Пуст у всех видов кроме `media`, а также у media-вложений, отправленных до
+    /// появления поля на бэкенде: тогда карточка рисует одну строку по
+    /// `text`/`photoURL`, как раньше (см. `mediaItems`).
+    public let media: [MediaItem]
+
+    /// Одна строка слайда: трек ЛИБО фильм.
+    public struct MediaItem: Equatable, Hashable, Identifiable {
+
+        /// Вид строки — подпись, а НЕ отдельный вид вложения: тип остаётся `media`.
+        public enum Kind: String, Equatable, Hashable {
+            case song
+            case movie
+        }
+
+        /// Порядок строк задан сервером и в пределах слайда уникален по виду.
+        public var id: String { "\(kind?.rawValue ?? "unknown")-\(title)" }
+
+        /// `nil` — вид, которого этот клиент не знает: строка всё равно рисуется,
+        /// у неё есть название и обложка.
+        public let kind: Kind?
+        public let title: String
+        /// Исполнитель у трека, «жанр · год» у фильма.
+        public let subtitle: String?
+        /// Арт альбома или постер фильма.
+        public let photoURL: URL?
+
+        public init(kind: Kind?, title: String, subtitle: String? = nil, photoURL: URL? = nil) {
+            self.kind = kind
+            self.title = title
+            self.subtitle = subtitle
+            self.photoURL = photoURL
+        }
+    }
+
     public struct Voice: Equatable, Hashable {
         public let fileId: String
         public let durationMs: Int
@@ -134,6 +171,7 @@ public struct MessagePublicationAttachment {
         photoURL: URL? = nil,
         blurHash: String? = nil,
         voice: Voice? = nil,
+        media: [MediaItem] = [],
         accessibilityTitle: String,
         voiceAnswerAccessibilityLabel: String,
         onPlay: ((String) -> Void)? = nil,
@@ -146,6 +184,7 @@ public struct MessagePublicationAttachment {
         self.photoURL = photoURL
         self.blurHash = blurHash
         self.voice = voice
+        self.media = media
         self.accessibilityTitle = accessibilityTitle
         self.voiceAnswerAccessibilityLabel = voiceAnswerAccessibilityLabel
         self.onPlay = onPlay

@@ -74,7 +74,21 @@ struct MessagePublicationQuoteCardView: View {
         static let coverSize: CGFloat = 56
         static let coverCorner: CGFloat = 10
         static let coverSpacing: CGFloat = 12
+        /// Просвет между строками слайда (трек и фильм).
+        static let mediaRowSpacing: CGFloat = 14
+        /// Просвет между названием и подписью внутри одной строки.
+        static let mediaTitleSpacing: CGFloat = 2
+        static let mediaSubtitleOpacity: Double = 0.7
     }
+
+    /// Кегль названия в строке слайда — ФИКСИРОВАННЫЙ, в отличие от `answerFontSize`.
+    ///
+    /// Адаптивный кегль там нужен, чтобы длинная цитата уместилась без обрезки; здесь
+    /// строк может быть две, и подбор по каждой в отдельности дал бы им разный размер
+    /// в одной карточке. Перенос по словам решает ту же задачу без этого побочного
+    /// эффекта: `fixedSize(vertical:)` растит карточку, а не режет текст.
+    private static let mediaTitleFontSize: CGFloat = 18
+    private static let mediaSubtitleFontSize: CGFloat = 15
 
     /// Нижний паддинг карточки — сколько пустоты у неё есть под последней строкой
     /// ответа. Ровно на столько пузырь ответа может лечь на карточку бесплатно,
@@ -175,37 +189,86 @@ struct MessagePublicationQuoteCardView: View {
                     onPlaybackStarted: attachment.onPlaybackStarted
                 )
                 .padding(.top, Layout.answerTop)
-            } else if !attachment.text.isEmpty {
-                // У медиа (кино/музыка) к тексту прилагается обложка — постер или
-                // арт альбома. Без неё карточка теряет половину смысла слайда:
-                // остаётся голое «Gladiator / Action, Drama · 2000». У остальных
-                // видов `photoURL` пуст, и ряд схлопывается в один текст.
-                HStack(alignment: .top, spacing: Layout.coverSpacing) {
-                    if let coverURL = coverURL {
-                        cover(coverURL)
+            } else if !mediaItems.isEmpty {
+                // Слайд «кино и музыка» — СТРОКОЙ НА КАЖДЫЙ объект, друг под другом:
+                // трек и фильм заполняются в анкете независимо, и цитируется слайд
+                // целиком. Заголовок при этом ОДИН на весь слайд (его даёт сервер),
+                // а не по одному над каждой строкой.
+                VStack(alignment: .leading, spacing: Layout.mediaRowSpacing) {
+                    ForEach(mediaItems) { item in
+                        mediaRow(item)
                     }
-                    Text(attachment.text)
-                        .font(Self.answerFont(size: Self.answerFontSize(for: attachment.text)))
-                        .foregroundColor(.white)
-                        .lineSpacing(4)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(.top, Layout.answerTop)
+            } else if !attachment.text.isEmpty {
+                Text(attachment.text)
+                    .font(Self.answerFont(size: Self.answerFontSize(for: attachment.text)))
+                    .foregroundColor(.white)
+                    .lineSpacing(4)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, Layout.answerTop)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// Обложка показывается только у медиа: у публикаций `photoURL` — это фото
-    /// поста, которое рисует своя карточка (`MessagePublicationCardView`), а у
-    /// текстовых видов анкеты его нет вовсе. Явная проверка вида, а не просто
-    /// «есть photoURL», чтобы карточка не начала внезапно показывать картинки
-    /// там, где раньше их не было.
-    private var coverURL: URL? {
-        guard attachment.kind == .media else { return nil }
-        return attachment.photoURL
+    /// Строки слайда «кино и музыка».
+    ///
+    /// Гейт по ВИДУ вложения, а не по «есть photoURL»: у публикаций `photoURL` —
+    /// это фото поста, которое рисует своя карточка (`MessagePublicationCardView`),
+    /// и без явной проверки карточка начала бы показывать картинки там, где их
+    /// раньше не было.
+    ///
+    /// Фолбэк на плоские `text`/`photoURL` — для вложений, отправленных ДО
+    /// появления списка на бэкенде: они лежат в истории чата навсегда, и такой
+    /// снапшот обязан рисоваться ровно как раньше — одной строкой. Название и
+    /// подпись в нём склеены переводом строки (`"Fairytale\nAlexander Rybak"`).
+    private var mediaItems: [MessagePublicationAttachment.MediaItem] {
+        guard attachment.kind == .media else { return [] }
+        if !attachment.media.isEmpty { return attachment.media }
+
+        let lines = attachment.text
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+        guard let title = lines.first, !title.isEmpty else { return [] }
+
+        return [
+            MessagePublicationAttachment.MediaItem(
+                kind: nil,
+                title: title,
+                subtitle: lines.count > 1 ? lines[1] : nil,
+                photoURL: attachment.photoURL
+            )
+        ]
+    }
+
+    /// Одна строка слайда: обложка слева, название и подпись справа.
+    ///
+    /// Подпись набрана тем же курсивом, но ступенью мельче и полупрозрачной —
+    /// исполнитель и «жанр · год» второстепенны относительно названия, а второго
+    /// начертания у карточки нет (`answerFont` — единственный шрифт контента).
+    private func mediaRow(_ item: MessagePublicationAttachment.MediaItem) -> some View {
+        HStack(alignment: .top, spacing: Layout.coverSpacing) {
+            if let photoURL = item.photoURL {
+                cover(photoURL)
+            }
+            VStack(alignment: .leading, spacing: Layout.mediaTitleSpacing) {
+                Text(item.title)
+                    .font(Self.answerFont(size: Self.mediaTitleFontSize))
+                    .foregroundColor(.white)
+                if let subtitle = item.subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(Self.answerFont(size: Self.mediaSubtitleFontSize))
+                        .foregroundColor(.white.opacity(Layout.mediaSubtitleOpacity))
+                }
+            }
+            .lineSpacing(2)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     /// Обложка медиа. Плейсхолдер — полупрозрачный белый по градиенту карточки:
@@ -385,6 +448,18 @@ struct SparkReplyBadge: View {
         static let diameter: CGFloat = 28
         static let star: CGFloat = 15
     }
+
+    /// На сколько бейдж вынесен за ЛЕВЫЙ край пузыря.
+    ///
+    /// Половина диаметра: правый край кружка встаёт ровно на левый край текста
+    /// реплики (у пузыря `.padding(.leading, 14)`), поэтому бейдж не наезжает на
+    /// первые буквы короткого ответа. Отсюда же его нельзя «подвинуть вправо»,
+    /// чтобы он влез в экран, — сдвиг сразу накрыл бы текст; недостающее место
+    /// добирается резервом композиции (`MessageView.quoteBadgeGutter`).
+    static let overhang: CGFloat = Layout.diameter / 2
+
+    /// Насколько бейдж поднят над верхом пузыря (та же пропорция, что в макете).
+    static let riseAboveBubble: CGFloat = 12
 
     /// #141416
     private static let background = Color(red: 20 / 255, green: 20 / 255, blue: 22 / 255)
