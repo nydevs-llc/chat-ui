@@ -22,6 +22,7 @@
 //  поэтому здесь она обнимает контент.
 //
 
+import NukeUI
 import SwiftUI
 import UIKit
 
@@ -68,6 +69,11 @@ struct MessagePublicationQuoteCardView: View {
         static let answerTop: CGFloat = 20
         static let quoteFontSize: CGFloat = 110
         static let quoteOpacity: Double = 0.10
+        /// Обложка медиа (постер фильма / арт альбома). 56pt — та же миниатюра,
+        /// что и на слайде анкеты; шире брать нельзя, контента всего 192pt.
+        static let coverSize: CGFloat = 56
+        static let coverCorner: CGFloat = 10
+        static let coverSpacing: CGFloat = 12
     }
 
     /// Нижний паддинг карточки — сколько пустоты у неё есть под последней строкой
@@ -170,16 +176,54 @@ struct MessagePublicationQuoteCardView: View {
                 )
                 .padding(.top, Layout.answerTop)
             } else if !attachment.text.isEmpty {
-                Text(attachment.text)
-                    .font(Self.answerFont(size: Self.answerFontSize(for: attachment.text)))
-                    .foregroundColor(.white)
-                    .lineSpacing(4)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, Layout.answerTop)
+                // У медиа (кино/музыка) к тексту прилагается обложка — постер или
+                // арт альбома. Без неё карточка теряет половину смысла слайда:
+                // остаётся голое «Gladiator / Action, Drama · 2000». У остальных
+                // видов `photoURL` пуст, и ряд схлопывается в один текст.
+                HStack(alignment: .top, spacing: Layout.coverSpacing) {
+                    if let coverURL = coverURL {
+                        cover(coverURL)
+                    }
+                    Text(attachment.text)
+                        .font(Self.answerFont(size: Self.answerFontSize(for: attachment.text)))
+                        .foregroundColor(.white)
+                        .lineSpacing(4)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.top, Layout.answerTop)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Обложка показывается только у медиа: у публикаций `photoURL` — это фото
+    /// поста, которое рисует своя карточка (`MessagePublicationCardView`), а у
+    /// текстовых видов анкеты его нет вовсе. Явная проверка вида, а не просто
+    /// «есть photoURL», чтобы карточка не начала внезапно показывать картинки
+    /// там, где раньше их не было.
+    private var coverURL: URL? {
+        guard attachment.kind == .media else { return nil }
+        return attachment.photoURL
+    }
+
+    /// Обложка медиа. Плейсхолдер — полупрозрачный белый по градиенту карточки:
+    /// пока грузится, ряд не «прыгает» шириной.
+    private func cover(_ url: URL) -> some View {
+        LazyImage(url: url) { state in
+            if let image = state.image {
+                image
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                RoundedRectangle(cornerRadius: Layout.coverCorner, style: .continuous)
+                    .fill(Color.white.opacity(0.12))
+            }
+        }
+        .processors([.resize(width: Layout.coverSize * UIScreen.main.scale)])
+        .frame(width: Layout.coverSize, height: Layout.coverSize)
+        .clipShape(RoundedRectangle(cornerRadius: Layout.coverCorner, style: .continuous))
     }
 
     /// Вопрос, если он есть и непустой. Пустая строка приравнена к отсутствию —
