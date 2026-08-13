@@ -30,6 +30,9 @@ public struct MessagePublicationAttachment {
         case photo
         case notForMe = "not_for_me"
         case dateIdeas = "date_ideas"
+        /// Кино/музыка одним видом: в анкете это единый слайд, где трек и фильм
+        /// опциональны по отдельности. Обложка (постер/арт) приезжает в `photoURL`.
+        case media
     }
 
     /// Вид элемента анкеты. `nil` у публикаций.
@@ -164,6 +167,11 @@ public struct MessagePublicationAttachment {
         // голоса, и по прежнему правилу оно молча уехало бы в компактную полоску,
         // где картинку показать негде.
         if kind == .photo { return true }
+        // Кино/музыка — тоже всегда карточкой: у вида есть обложка, которую в
+        // компактной полоске показать негде. Полагаться на непустой `question`
+        // (туда мост кладёт название трека/фильма) нельзя — пустое название
+        // молча схлопнуло бы карточку в полоску.
+        if kind == .media { return true }
         return voice != nil || !(question ?? "").isEmpty
     }
 
