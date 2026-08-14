@@ -112,7 +112,15 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
 
     func updateUIView(_ cv: UICollectionView, context: Context) {
         cv.isScrollEnabled = isScrollEnabled
-        context.coordinator.apply(sections: sections)
+        // Данные не изменились — списку нечего делать.
+        //
+        // `apply(sections:)` на каждой перерисовке SwiftUI гонял диффинг и мог
+        // выдать `reconfigureItems` от совершенно посторонних причин. Каждая
+        // такая переконфигурация пересобирает SwiftUI-дерево ячейки, что дорого
+        // само по себе и разрушительно для любого состояния внутри неё.
+        if context.coordinator.lastSections != sections {
+            context.coordinator.apply(sections: sections)
+        }
 
         if !isScrollEnabled {
             DispatchQueue.main.async {
@@ -139,6 +147,22 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
         struct ItemID: Hashable { let raw: String }
 
         private weak var collectionView: UICollectionView?
+
+        /// Один плеер голосовых на весь список.
+        ///
+        /// Живёт в координаторе, а не в строке, ровно потому, что координатор
+        /// `UIViewRepresentable` переживает и `updateUIView`, и
+        /// `reconfigureItems`, и переиспользование ячеек. Плеер в
+        /// `@StateObject` внутри `UIHostingConfiguration` этого не переживал:
+        /// присваивание `contentConfiguration` строит новое SwiftUI-дерево, и
+        /// состояние воспроизведения создавалось заново пустым, пока старый
+        /// плеер доигрывал запись. Играл один объект, рисовал другой.
+        ///
+        /// Одного плеера достаточно и по смыслу: в переписке одновременно
+        /// звучит ровно одна запись — прежде это обеспечивалось рассылкой
+        /// `.audioPlaybackStarted`, которая глушила все прочие экземпляры.
+        let voicePlayer = RecordingPlayer()
+
         private var dataSource: UICollectionViewDiffableDataSource<SectionID, ItemID>!
 
         private let outer: SonataUIList
@@ -150,7 +174,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
 
         private var sectionIndexByID: [SectionID: Int] = [:]
         private var rowIndexByItemID: [ItemID: (s: Int, r: Int)] = [:]
-        private var lastSections: [MessagesSection] = []
+        var lastSections: [MessagesSection] = []
         private var paginationTargetItemID: ItemID?
         private var hasPerformedInitialScroll = false
 
@@ -208,11 +232,16 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
                 )
                 .background(MessageMenuPreferenceViewSetter(id: row.id))
 
+                // Плеер отдаём ВНУТРИ замыкания: содержимое
+                // `UIHostingConfiguration` — новый корень SwiftUI-дерева, и
+                // окружение списка оно не наследует.
+                let hostedView = messageView.sharedVoicePlayer(self.voicePlayer)
+
                 if #available(iOS 16.0, *) {
-                    cell.contentConfiguration = UIHostingConfiguration { messageView }
+                    cell.contentConfiguration = UIHostingConfiguration { hostedView }
                         .margins(.all, 0)
                 } else {
-                    cell.contentConfiguration = UIHostingConfigurationBackport { messageView }
+                    cell.contentConfiguration = UIHostingConfigurationBackport { hostedView }
                 }
 
                 cell.contentView.transform = self.invertT
