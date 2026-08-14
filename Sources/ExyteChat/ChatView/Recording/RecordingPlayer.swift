@@ -24,7 +24,10 @@ final class RecordingPlayer: ObservableObject {
     /// обслуживает бар ввода (предпрослушивание только что записанного), где
     /// плеер один и вопроса «чей это прогресс» не возникает. Контекст нужен
     /// только там, где плеер один, а строк много, — в ленте переписки.
-    @Published private(set) var context: VoicePlaybackContext = .notLoaded
+    /// Не `private(set)`: вьюхи подписываются на `$context`, а проекция
+    /// `@Published` наследует уровень доступа сеттера. Писать сюда снаружи
+    /// всё равно некому — единственная точка сборки это `refreshContext()`.
+    @Published var context: VoicePlaybackContext = .notLoaded
 
     /// Файл, заряженный в плеер прямо сейчас.
     var currentAssetURL: URL? { context.assetURL }

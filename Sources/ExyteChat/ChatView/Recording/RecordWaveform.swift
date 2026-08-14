@@ -32,9 +32,15 @@ struct RecordWaveformWithButtons: View {
     /// заряжена именно её запись. Чужое — `notLoaded`, то есть явный сброс.
     /// Без этой фильтрации переиспользованная ячейка показывала бы прогресс
     /// предыдущего сообщения.
-    private var displayContext: VoicePlaybackContext {
-        recordPlayer.context.matching(recording.url)
-    }
+    ///
+    /// Хранится в `@State`, а НЕ вычисляется из плеера на каждом проходе `body`.
+    /// Разница принципиальная: плеер приходит через `@Environment`, а окружение
+    /// не подписывает вьюху на `ObservableObject`. Вычисляемое свойство отдавало
+    /// бы свежее значение только когда `body` и так пересчитывается по другой
+    /// причине — то есть волна и таймер стояли бы на месте, пока по ленте не
+    /// пройдёт посторонняя перерисовка. Подписка ниже кладёт сюда значение
+    /// каждым тиком плеера, и это единственный источник движения.
+    @State private var displayContext: VoicePlaybackContext = .notLoaded
 
     var recording: Recording
 
@@ -109,14 +115,6 @@ struct RecordWaveformWithButtons: View {
     /// Таймер, который переводит фазу в `gaveUp`. Перезапускается на каждом
     /// входе в буферизацию, снимается при появлении звука.
     @State private var bufferingTimeoutTask: Task<Void, Never>?
-
-    /// Счётчик перерисовок по тикам общего плеера.
-    ///
-    /// `@Environment` не подписывает на `ObservableObject`, а `@ObservedObject`
-    /// на необязательное значение из окружения навесить нельзя. Инкремент
-    /// счётчика — самый дешёвый способ заставить SwiftUI перечитать
-    /// `displayContext`. Значение не используется, важен сам факт изменения.
-    @State private var observedTick: UInt8 = 0
 
     var duration: Int {
         let context = displayContext
@@ -210,11 +208,18 @@ struct RecordWaveformWithButtons: View {
             // `pendingPlayAfterResolve` не передан, так что путь мёртв.
             startPendingPlaybackIfNeeded(url: newURL)
         }
-        // `@Environment` отдаёт ссылку, но НЕ подписывает на изменения
-        // `@Published`. Подписываемся явно: без этого волна не двигалась бы уже
-        // по другой причине — плеер тикает, а вьюха об этом не знает.
-        .onReceive(recordPlayer.objectWillChange) { _ in
-            observedTick &+= 1
+        // Единственный источник движения волны и таймера.
+        //
+        // `@Environment` отдаёт ССЫЛКУ на плеер, но не подписывает вьюху на его
+        // `@Published`. Подписываемся на сам `context` (а не на
+        // `objectWillChange`): тот шлётся из `willSet`, то есть ДО записи, и по
+        // нему пришлось бы читать значение отдельным проходом. Здесь значение
+        // приезжает уже изменённым, фильтруется по своей записи и кладётся в
+        // `@State` — дальше SwiftUI сам перерисовывает ровно те строки, у
+        // которых оно реально поменялось (`VoicePlaybackContext: Equatable`,
+        // чужие тики схлопываются в один и тот же `.notLoaded`).
+        .onReceive(recordPlayer.$context) { context in
+            displayContext = context.matching(recording.url)
         }
         .onAppear {
             // Тот же отложенный старт, но для случая, когда `onChange` физически
