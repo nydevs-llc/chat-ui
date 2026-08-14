@@ -12,7 +12,29 @@ struct RecordWaveformWithButtons: View {
 
     @Environment(\.chatTheme) private var theme
 
-    @StateObject var recordPlayer = RecordingPlayer()
+    /// Запасной плеер — только для потребителей БЕЗ общего (карточка-цитата,
+    /// превью). В ленте переписки он не используется: там играет общий.
+    ///
+    /// Остаётся `@StateObject`, и это безопасно ровно потому, что вне ленты
+    /// ячеек нет и переконфигурации, которая его снесла бы, тоже нет.
+    @StateObject private var fallbackPlayer = RecordingPlayer()
+
+    /// Общий плеер переписки, если он есть.
+    @Environment(\.sharedVoicePlayer) private var sharedPlayer
+
+    /// Кто на самом деле играет.
+    private var recordPlayer: RecordingPlayer { sharedPlayer ?? fallbackPlayer }
+
+    /// Состояние воспроизведения С ТОЧКИ ЗРЕНИЯ ЭТОЙ записи.
+    ///
+    /// Здесь и происходит развязка, ради которой всё затевалось: общий плеер
+    /// вещает одно состояние на всю ленту, а строка берёт его, только если
+    /// заряжена именно её запись. Чужое — `notLoaded`, то есть явный сброс.
+    /// Без этой фильтрации переиспользованная ячейка показывала бы прогресс
+    /// предыдущего сообщения.
+    private var displayContext: VoicePlaybackContext {
+        recordPlayer.context.matching(recording.url)
+    }
 
     var recording: Recording
 
@@ -88,8 +110,20 @@ struct RecordWaveformWithButtons: View {
     /// входе в буферизацию, снимается при появлении звука.
     @State private var bufferingTimeoutTask: Task<Void, Never>?
 
+    /// Счётчик перерисовок по тикам общего плеера.
+    ///
+    /// `@Environment` не подписывает на `ObservableObject`, а `@ObservedObject`
+    /// на необязательное значение из окружения навесить нельзя. Инкремент
+    /// счётчика — самый дешёвый способ заставить SwiftUI перечитать
+    /// `displayContext`. Значение не используется, важен сам факт изменения.
+    @State private var observedTick: UInt8 = 0
+
     var duration: Int {
-        return max(Int((recordPlayer.secondsLeft != 0 ? recordPlayer.secondsLeft : recording.duration)), 0)
+        let context = displayContext
+        // `secondsLeft == 0` означает И «не начинали», И «доиграли» — в обоих
+        // случаях верно показать полную длительность записи.
+        let remaining = context.secondsLeft != 0 ? context.secondsLeft : recording.duration
+        return max(Int(remaining), 0)
     }
 
     /// Единственная точка, где меняется фаза кнопки.
@@ -157,7 +191,7 @@ struct RecordWaveformWithButtons: View {
                     samples: maxWaveformWidth.map {
                         RecordWaveformPlaying.downsampled(recording.waveformSamples, fitting: $0)
                     } ?? recording.waveformSamples,
-                    progress: recordPlayer.progress,
+                    progress: displayContext.progress,
                     color: colorWaveform,
                     addExtraDots: false
                 )
@@ -175,6 +209,12 @@ struct RecordWaveformWithButtons: View {
             // сами. Для штатных голосовых `recording.url` не меняется, а
             // `pendingPlayAfterResolve` не передан, так что путь мёртв.
             startPendingPlaybackIfNeeded(url: newURL)
+        }
+        // `@Environment` отдаёт ссылку, но НЕ подписывает на изменения
+        // `@Published`. Подписываемся явно: без этого волна не двигалась бы уже
+        // по другой причине — плеер тикает, а вьюха об этом не знает.
+        .onReceive(recordPlayer.objectWillChange) { _ in
+            observedTick &+= 1
         }
         .onAppear {
             // Тот же отложенный старт, но для случая, когда `onChange` физически
@@ -202,7 +242,7 @@ struct RecordWaveformWithButtons: View {
             guard isPending else { return }
             send(.pendingIntentObserved)
         }
-        .onChange(of: recordPlayer.progress) { progress in
+        .onChange(of: displayContext.progress) { progress in
             // Playhead поехал — единственное надёжное доказательство, что звук
             // реально идёт (`playing` поднимается и при протухшей ссылке).
             // Двигает и фазу кнопки, и метрику: у обеих один и тот же критерий.
@@ -213,11 +253,11 @@ struct RecordWaveformWithButtons: View {
             // ветка выходит здесь же, не трогая `@State` и не вызывая перерисовку.
             guard let onPlaybackStarted,
                   !didReportPlaybackStart,
-                  recordPlayer.playing else { return }
+                  displayContext.isPlaying else { return }
             didReportPlaybackStart = true
             onPlaybackStarted()
         }
-        .onChange(of: recordPlayer.playing) { isPlaying in
+        .onChange(of: displayContext.isPlaying) { isPlaying in
             // Плеер поднял/опустил `playing`. Сам по себе из буферизации не
             // выводит — там ждём движения playhead, — но на готовом файле именно
             // он переключает кнопку в паузу, не дожидаясь первого тика.
@@ -322,7 +362,7 @@ struct RecordWaveformWithButtons: View {
     private func startPendingPlaybackIfNeeded(url: URL?) {
         guard let url,
               pendingPlayAfterResolve?.wrappedValue == true,
-              !recordPlayer.playing else { return }
+              !displayContext.isPlaying else { return }
         // Гасим намерение ПЕРЕД стартом, а не после.
         //
         // `recordPlayer` в гарде выше — свой у каждого поколения вьюхи, а их в
