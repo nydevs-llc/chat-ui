@@ -251,7 +251,17 @@ struct RecordWaveformWithButtons: View {
             // Playhead поехал — единственное надёжное доказательство, что звук
             // реально идёт (`playing` поднимается и при протухшей ссылке).
             // Двигает и фазу кнопки, и метрику: у обеих один и тот же критерий.
-            guard progress > 0 else { return }
+            //
+            // `isPlaying` в гарде обязателен, и это не перестраховка.
+            // «Playhead поехал» — про ДВИЖЕНИЕ, а `progress > 0` — про ПОЗИЦИЮ,
+            // и на паузе посреди трека позиция остаётся ненулевой. `pause()`
+            // пересобирает контекст, `onChange` видит изменившееся значение и
+            // без этой проверки слал бы `progressAdvanced` уже ПОСЛЕ паузы:
+            // фаза возвращалась из `.paused` в `.playing`, и кнопка застревала
+            // на иконке паузы, хотя звук стоял (подтверждено логом переходов:
+            // `tapped → paused`, `playerDidPause → paused`,
+            // `progressAdvanced → playing`).
+            guard progress > 0, displayContext.isPlaying else { return }
             send(.progressAdvanced)
 
             // `onPlaybackStarted` в guard первым: у штатных голосовых он nil, и

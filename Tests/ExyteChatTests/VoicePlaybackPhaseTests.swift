@@ -169,6 +169,22 @@ final class VoicePlaybackPhaseTests: XCTestCase {
         XCTAssertFalse(paused.showsSpinner, "Пауза — не загрузка")
     }
 
+    /// Регресс: на паузе кнопка застревала на иконке «пауза», хотя звук стоял.
+    ///
+    /// `pause()` пересобирает контекст, а `progress` посреди трека остаётся
+    /// НЕНУЛЕВЫМ — вьюха видела изменившееся значение и слала
+    /// `progressAdvanced` уже после паузы. Позиция playhead ≠ движение
+    /// playhead: осознанную паузу пользователя отменять ей нельзя.
+    func test_позднийProgressAdvancedНаПаузе_неВозвращаетВИгру() {
+        let paused = playing.applying(.tapped(isResolved: true))
+        XCTAssertEqual(paused, .paused)
+
+        let afterLateTick = paused.applying(.progressAdvanced)
+
+        XCTAssertEqual(afterLateTick, .paused, "Пауза обязана пережить запоздавший тик прогресса")
+        XCTAssertFalse(afterLateTick.showsPauseIcon, "Кнопка на паузе — треугольник, а не пауза")
+    }
+
     /// Возобновление с паузы: файл уже локально готов, спиннера быть не должно.
     func test_возобновлениеСПаузы_безСпиннера() {
         let resumed = playing
