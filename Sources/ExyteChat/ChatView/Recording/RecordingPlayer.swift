@@ -18,6 +18,17 @@ final class RecordingPlayer: ObservableObject {
     @Published var secondsLeft: Double = 0.0
     @Published var progress: Double = 0.0
 
+    /// Состояние воспроизведения, адресованное конкретной записи.
+    ///
+    /// Существует РЯДОМ с полями выше, а не вместо них: тот же `RecordingPlayer`
+    /// обслуживает бар ввода (предпрослушивание только что записанного), где
+    /// плеер один и вопроса «чей это прогресс» не возникает. Контекст нужен
+    /// только там, где плеер один, а строк много, — в ленте переписки.
+    @Published private(set) var context: VoicePlaybackContext = .notLoaded
+
+    /// Файл, заряженный в плеер прямо сейчас.
+    var currentAssetURL: URL? { context.assetURL }
+
     // Дефект 2 (P10): было `AVAudioSession()` — приватный инстанс, не влияющий
     // на реальную сессию приложения. Все `setCategory`/`setActive` ниже были
     // no-op, первое воспроизведение работало только потому, что сессия
@@ -26,6 +37,12 @@ final class RecordingPlayer: ObservableObject {
     private let audioSession = AVAudioSession.sharedInstance()
     var didPlayTillEnd = PassthroughSubject<Void, Never>()
     private var recording: Recording?
+
+    /// Адрес файла, реально заряженного в `AVPlayer`.
+    ///
+    /// Не `recording?.url`: у записи URL может смениться (резолв), а заряжён в
+    /// плеер по-прежнему прежний файл, пока `setupPlayer` не отработал.
+    private var loadedAssetURL: URL?
     private var player: AVPlayer?
     private var timeObserver: Any?
     private var loaderDelegate: CryptoResourceLoaderDelegate?
@@ -108,6 +125,7 @@ final class RecordingPlayer: ObservableObject {
         isStartingPlayback = false
         player?.pause()
         playing = false
+        refreshContext()
     }
 
     func seek(to progress: Double) {
@@ -128,6 +146,8 @@ final class RecordingPlayer: ObservableObject {
         recording = nil
         secondsLeft = 0.0
         progress = 0
+        loadedAssetURL = nil
+        refreshContext()
     }
 
     // MARK: - Private Methods
@@ -136,6 +156,8 @@ final class RecordingPlayer: ObservableObject {
         duration = trackDuration
         progress = 0.0
         secondsLeft = trackDuration
+        loadedAssetURL = url
+        refreshContext()
         removeAllNotificationObservers()
         // Обнулить ссылку недостаточно: наблюдатель остаётся зарегистрированным
         // в старом плеере и продолжает тикать. Снимаем его до замены item'а.
@@ -228,6 +250,7 @@ final class RecordingPlayer: ObservableObject {
             self.duration = item.duration.seconds
             self.progress = time.seconds / item.duration.seconds
             self.secondsLeft = (item.duration - time).seconds
+            self.refreshContext()
 
             // Дефект 1 (P10): второй, независимый от нотификации источник
             // истины о конце трека. `AVPlayerItemDidPlayToEndTime` не приходит,
@@ -260,6 +283,7 @@ final class RecordingPlayer: ObservableObject {
         playing = false
         progress = 0
         secondsLeft = duration
+        refreshContext()
         // Completion, а не «выстрелил и забыл»: без него `play()` может
         // вызвать `player.play()` раньше, чем плеер физически домотает до
         // нуля — тогда следующий тап по play молча стартует с конца, откуда
@@ -305,10 +329,45 @@ final class RecordingPlayer: ObservableObject {
         isStartingPlayback = false
         player?.play()
         playing = true
+        refreshContext()
         NotificationCenter.default.post(name: .audioPlaybackStarted, object: self)
     }
 
+    /// Единственная точка сборки контекста.
+    ///
+    /// Контекст ПРОИЗВОДЕН от полей воспроизведения — второй самостоятельный
+    /// источник истины неизбежно разъехался бы с первым.
+    private func refreshContext() {
+        context = VoicePlaybackContext(
+            assetURL: loadedAssetURL,
+            progress: progress,
+            secondsLeft: secondsLeft,
+            isPlaying: playing
+        )
+    }
+
 }
+
+#if DEBUG
+extension RecordingPlayer {
+    /// Прямая установка состояния для юнит-тестов контекста.
+    ///
+    /// Существует только чтобы проверить связь «поля → контекст» без
+    /// `AVPlayer`, симулятора и реального файла.
+    func applyContextForTesting(
+        assetURL: URL?,
+        progress: Double,
+        secondsLeft: Double,
+        isPlaying: Bool
+    ) {
+        self.loadedAssetURL = assetURL
+        self.progress = progress
+        self.secondsLeft = secondsLeft
+        self.playing = isPlaying
+        refreshContext()
+    }
+}
+#endif
 
 // MARK: - Observers
 
