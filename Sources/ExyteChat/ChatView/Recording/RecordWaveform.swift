@@ -116,6 +116,25 @@ struct RecordWaveformWithButtons: View {
     /// входе в буферизацию, снимается при появлении звука.
     @State private var bufferingTimeoutTask: Task<Void, Never>?
 
+    /// Что именно нарисовано в кнопке прямо сейчас.
+    ///
+    /// Нужен только как `.id(...)`: без явной идентичности SwiftUI считает три
+    /// ветки `if/else` одной и той же вьюхой, подменяет содержимое на месте и
+    /// переход анимировать нечему.
+    private enum ButtonContent: Hashable {
+        case spinner, play, pause
+    }
+
+    /// Смена треугольник ↔ пауза.
+    ///
+    /// Асимметрично: уходящая иконка сжимается, приходящая появляется в полном
+    /// масштабе. Симметричное сжатие в обе стороны читается как «кнопка
+    /// дёрнулась», а нам нужно ощущение подмены содержимого.
+    private static let iconTransition: AnyTransition = .asymmetric(
+        insertion: .opacity,
+        removal: .opacity.combined(with: .scale(scale: 0.7))
+    )
+
     var duration: Int {
         let context = displayContext
         // `secondsLeft == 0` означает И «не начинали», И «доиграли» — в обоих
@@ -148,17 +167,39 @@ struct RecordWaveformWithButtons: View {
                     ProgressView()
                         .progressViewStyle(.circular)
                         .tint(colorButton)
+                        // Спиннеру своя идентичность: без неё SwiftUI считает его
+                        // и иконки одной вьюхой, и переход между ними анимируется
+                        // как подмена картинки — то есть спиннер «въезжает»
+                        // масштабом там, где он должен просто появиться.
+                        .transition(.opacity)
+                        .id(ButtonContent.spinner)
                 } else if phase.showsPauseIcon {
                     theme.images.message.pauseAudio
                         .renderingMode(.template)
+                        .transition(Self.iconTransition)
+                        .id(ButtonContent.pause)
                 } else {
                     theme.images.message.playAudio
                         .renderingMode(.template)
+                        .transition(Self.iconTransition)
+                        .id(ButtonContent.play)
                 }
             }
             .foregroundColor(colorButton)
             .viewSize(40)
             .circleBackground(colorButtonBg)
+            // Анимируем СМЕНУ ФАЗЫ, а не что придётся.
+            //
+            // `.animation(_:value:)` с явным значением, а не модификатор на всё
+            // поддерево: иначе под анимацию попадёт и заливка волны, которая
+            // обновляется 5 раз в секунду, и каждый тик стал бы интерполяцией.
+            //
+            // Треугольник и пауза — фигуры разного силуэта (не SF Symbols, а
+            // ассеты, поэтому `contentTransition` здесь не применим), морфинг
+            // между ними выглядел бы грязно. Короткий crossfade со сжатием
+            // читается как отклик на нажатие: старая иконка уходит уменьшаясь,
+            // новая приходит в масштабе 1.
+            .animation(.easeInOut(duration: 0.18), value: phase)
             .highPriorityGesture(TapGesture().onEnded {
                 // Тап — единственный сигнал, поднимающий спиннер после того, как
                 // запись уже прослушали: намерение из приложения в `finished`
