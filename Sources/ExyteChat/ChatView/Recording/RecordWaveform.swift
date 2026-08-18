@@ -632,14 +632,27 @@ struct RecordWaveform: View {
 
     static let spacing: CGFloat = 2
     static let width: CGFloat = 2
-    static let maxSampleHeight: CGFloat = 20
+    // Редизайн 2026-08-17: дорожка выше (было 20) — как в макете аудио-ответов.
+    static let maxSampleHeight: CGFloat = 26
+    /// Минимальная высота столбика. Без неё `maxSampleHeight * s` при s≈0 даёт
+    /// нулевую высоту, и в паузах речи волна пропадала разрывами. Зеркалит
+    /// `minBarHeight` из `AudioWaveformView` (плеер публикаций/секретов).
+    static let minSampleHeight: CGFloat = 3
 
     var body: some View {
         GeometryReader { g in
-            HStack(alignment: .bottom, spacing: RecordWaveform.spacing) {
+            // Столбики центрируются по вертикали (было `.bottom`): в макете волна
+            // симметрична относительно средней линии, а не растёт от пола.
+            HStack(alignment: .center, spacing: RecordWaveform.spacing) {
                 ForEach(Array(samples.enumerated()), id: \.offset) { _, s in
                     Capsule()
-                        .frame(width: RecordWaveform.width, height: RecordWaveform.maxSampleHeight * CGFloat(s))
+                        .frame(
+                            width: RecordWaveform.width,
+                            height: max(
+                                RecordWaveform.minSampleHeight,
+                                RecordWaveform.maxSampleHeight * CGFloat(s)
+                            )
+                        )
                 }
 
                 if addExtraDots {
