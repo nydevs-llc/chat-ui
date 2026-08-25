@@ -544,41 +544,60 @@ struct MessageView: View {
     /// Оформление повторяет `quoteReplyBubble` по частям, а не переиспользует его
     /// целиком: там всё построено вокруг `Text` — резерв под статус СПРАВА в той
     /// же строке, вертикальные паддинги под кегль. У плеера своя геометрия
-    /// (фиксированная высота, волна тянется по ширине), поэтому статус уезжает
-    /// под запись, а не в строку.
+    /// (фиксированная высота, волна тянется по ширине), поэтому статус живёт
+    /// оверлеем в углу.
+    ///
+    /// Раскладка статуса — ТА ЖЕ, что у обычного голосового (см. ветку
+    /// `if let recording = message.recording` в `bubbleView`): запись + нижний
+    /// паддинг 10 и `.overlay(alignment: .bottomTrailing)` с отступами 12/6.
+    /// Отличаются только цвета — на золотой заливке искры набор темы
+    /// (`myMessageTime`) не читается, поэтому `MessageStatusView` вызывается
+    /// напрямую с тёмно-коричневым из макета.
     ///
     /// Заливка, радиус и бейдж — те же константы: пузырь обязан читаться как
     /// искра, независимо от того, текст в нём или запись.
     private func quoteReplyVoiceBubble(_ recording: Recording, _ message: Message) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Предел ставится ВОЛНЕ, а не пузырю: у волны внутри `GeometryReader`,
-            // и только там её можно удержать. Ограничение снаружи ужимало
-            // `HStack` целиком — кнопка play уезжала за край, волну обрезало.
-            recordingView(recording, maxWaveformWidth: voiceWaveformMaxWidth(recording))
-
-            if let status = quoteReplyStatus(message) {
-                MessageStatusView(
-                    status: status,
-                    // Как и у текстовой искры: на золотой заливке капсула-подложка
-                    // не нужна, галочки читаются напрямую.
-                    needsCapsule: false,
-                    colorSet: MessageStatusColorSet(
-                        sending: MessageView.quoteReplyOutgoingText.opacity(0.5),
-                        sent: MessageView.quoteReplyOutgoingText.opacity(0.5),
-                        received: MessageView.quoteReplyOutgoingText.opacity(0.5),
-                        read: MessageView.quoteReplyOutgoingText.opacity(0.5)
-                    ),
-                    onRetry: {
-                        if case let .error(draft) = status {
-                            viewModel.sendMessage(draft)
+        // Предел ставится ВОЛНЕ, а не пузырю: у волны внутри `GeometryReader`,
+        // и только там её можно удержать. Ограничение снаружи ужимало
+        // `HStack` целиком — кнопка play уезжала за край, волну обрезало.
+        recordingView(recording, maxWaveformWidth: voiceWaveformMaxWidth(recording))
+            // Статус НАКЛАДЫВАЕТСЯ на блок записи, а не идёт следующей строкой
+            // стека. Длительность внутри `recordingView` стоит внизу СЛЕВА,
+            // справа от неё пусто — туда и садится галочка, визуально на одной
+            // строке с длительностью.
+            //
+            // Прежний `VStack(alignment: .leading)` отдавал статусу отдельную
+            // строку, да ещё и прижимал его к ЛЕВОМУ краю (`.padding(.trailing)`
+            // leading-выровненного ребёнка вправо не двигает): галочка вылезала
+            // под кнопку play, в зону скругления, и читалась как оторванный от
+            // пузыря мусор.
+            .padding(.bottom, 10)
+            .overlay(alignment: .bottomTrailing) {
+                if let status = quoteReplyStatus(message) {
+                    MessageStatusView(
+                        status: status,
+                        // Как и у текстовой искры: на золотой заливке
+                        // капсула-подложка не нужна, галочки читаются напрямую.
+                        needsCapsule: false,
+                        colorSet: MessageStatusColorSet(
+                            sending: MessageView.quoteReplyOutgoingText.opacity(0.5),
+                            sent: MessageView.quoteReplyOutgoingText.opacity(0.5),
+                            received: MessageView.quoteReplyOutgoingText.opacity(0.5),
+                            read: MessageView.quoteReplyOutgoingText.opacity(0.5)
+                        ),
+                        onRetry: {
+                            if case let .error(draft) = status {
+                                viewModel.sendMessage(draft)
+                            }
                         }
-                    }
-                )
-                .padding(.trailing, 12)
-                .padding(.bottom, 8)
+                    )
+                    // Отступы больше, чем у текстового пузыря: там статус стоит
+                    // в потоке за текстом, а здесь висит в углу, где скругление
+                    // съедает видимое расстояние до края.
+                    .padding(.trailing, MessageView.horizontalTextPadding)
+                    .padding(.bottom, 6)
+                }
             }
-        }
-        .padding(.bottom, quoteReplyStatus(message) == nil ? 8 : 0)
         // Никаких внешних `frame`: пузырь обжимает содержимое сам, ширину ему
         // диктует ограниченная волна внутри.
         .background(MessageView.quoteReplyBubbleFill)
