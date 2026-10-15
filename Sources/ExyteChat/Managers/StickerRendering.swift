@@ -56,7 +56,7 @@ extension EnvironmentValues {
 // MARK: - Big emoji
 
 /// Сообщение из 1–3 эмодзи (и ничего больше, кроме пробелов по краям) рисуется
-/// крупно без пузыря: 1 — 120 pt, 2 — 90, 3 — 70.
+/// крупно без пузыря: 1 — 94 pt, 2 — 79, 3 — 65 (как в Telegram: 94 × 1.0 / 0.84 / 0.69).
 public enum BigEmoji {
     public static let maxCount = 3
 
@@ -81,9 +81,9 @@ public enum BigEmoji {
 
     public static func pointSize(forCount count: Int) -> CGFloat {
         switch count {
-        case 1: return 120
-        case 2: return 90
-        default: return 70
+        case 1: return 94
+        case 2: return 79
+        default: return 65
         }
     }
 
