@@ -61,6 +61,8 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
     var bottomContentInset: CGFloat = 0
     /// Тап по чипу реакции под пузырём (эмоджи чипа); `nil` — реакции выключены.
     var reactionTap: ((Message, String) -> Void)?
+    /// Рендер стикеров/больших эмодзи; кладётся в окружение каждой ячейки.
+    var stickerRendering: ChatStickerRendering?
 
     func makeUIView(context: Context) -> UICollectionView {
         let layout = UIListLayout.makeLayout(
@@ -121,6 +123,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
         // Координатор держит копию `outer` со времени создания — свежий обработчик
         // кладём отдельно, иначе ячейки звали бы замыкание из первого рендера.
         context.coordinator.reactionTap = reactionTap
+        context.coordinator.stickerRendering = stickerRendering
         // Данные не изменились — списку нечего делать.
         //
         // `apply(sections:)` на каждой перерисовке SwiftUI гонял диффинг и мог
@@ -208,6 +211,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
         private var hasPerformedInitialScroll = false
 
         var reactionTap: ((Message, String) -> Void)?
+        var stickerRendering: ChatStickerRendering?
 
         private var invertT: CGAffineTransform {
             outer.type == .conversation ? CGAffineTransform(scaleX: 1, y: -1) : .identity
@@ -269,6 +273,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
                 let hostedView = messageView
                     .sharedVoicePlayer(self.voicePlayer)
                     .environment(\.messageReactionTap, self.reactionTap)
+                    .environment(\.chatStickerRendering, self.stickerRendering)
 
                 if #available(iOS 16.0, *) {
                     cell.contentConfiguration = UIHostingConfiguration { hostedView }

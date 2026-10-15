@@ -698,13 +698,14 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
             let type = action.type()
             switch type {
             case .edit:
-                return message.type == .text && message.user.isCurrentUser && message.publicationAttachment == nil
+                return message.type == .text && message.user.isCurrentUser && message.publicationAttachment == nil && message.sticker == nil
             case .delete:
                 return message.user.isCurrentUser && message.isDeliverableStatus
             case .reply, .forward:
                 return true
             case .copy:
-                return message.type == .text || message.type == .url
+                // Стикер копировать нечего (текста у него нет).
+                return (message.type == .text || message.type == .url) && message.sticker == nil
             case .information:
                 return message.user.isCurrentUser &&
                 isGroup &&

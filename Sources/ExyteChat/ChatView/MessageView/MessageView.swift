@@ -11,6 +11,7 @@ import MapKit
 struct MessageView: View {
 
     @Environment(\.chatTheme) private var theme
+    @Environment(\.chatStickerRendering) private var stickerRendering
 
     @ObservedObject var viewModel: ChatViewModel
 
@@ -219,7 +220,30 @@ struct MessageView: View {
     /// без единого изменения.
     @ViewBuilder
     func bubbleView(_ message: Message) -> some View {
-        if let publication = message.publicationAttachment, publication.showsQuoteCard {
+        if let sticker = message.sticker, !message.isDeleted {
+            // Стикер — без пузыря (Telegram).
+            MessageStickerView(
+                message: message,
+                sticker: sticker,
+                isDisplayingMessageMenu: isDisplayingMessageMenu,
+                showsTime: showMessageTimeView,
+                onRetry: retryClosure(message)
+            )
+            .applyIf(isDisplayingMessageMenu) {
+                $0.frameGetter($viewModel.messageFrame)
+            }
+        } else if let emojis = MessageView.bigEmojis(of: message, rendering: stickerRendering) {
+            BigEmojiMessageView(
+                message: message,
+                emojis: emojis,
+                isDisplayingMessageMenu: isDisplayingMessageMenu,
+                showsTime: showMessageTimeView,
+                onRetry: retryClosure(message)
+            )
+            .applyIf(isDisplayingMessageMenu) {
+                $0.frameGetter($viewModel.messageFrame)
+            }
+        } else if let publication = message.publicationAttachment, publication.showsQuoteCard {
             publicationQuoteComposition(message, publication)
         } else {
             standardBubbleView(message)
@@ -343,8 +367,18 @@ struct MessageView: View {
     /// вынесен в общий helper — правки этого списка (новый тип вложения) и так
     /// требуют трогать оба места одновременно, дублирование делает пропуск
     /// заметным при ревью, а не молчаливым.
+    /// Повтор отправки упавшего сообщения — тот же путь, что у статуса в пузыре.
+    private func retryClosure(_ message: Message) -> () -> Void {
+        { [viewModel] in
+            if case let .error(draft) = message.status {
+                viewModel.sendMessage(draft)
+            }
+        }
+    }
+
     static func hasRenderableContent(_ message: Message) -> Bool {
-        !message.attachments.isEmpty
+        message.sticker != nil
+            || !message.attachments.isEmpty
             || message.publicationAttachment != nil
             || message.type == .geo
             || !message.text.isEmpty
@@ -1179,6 +1213,7 @@ struct ReplyQuoteView: View {
 
     private var preview: String {
         if !reply.text.isEmpty { return reply.text }
+        if let sticker = reply.sticker { return sticker.emoji }
         return reply.recording != nil ? "🎤" : ""
     }
 

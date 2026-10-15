@@ -89,6 +89,8 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
     let didSendMessage: (DraftMessage) -> Void
     /// Реакции на сообщения (меню, сетка эмоджи, чипы). `nil` — реакции выключены.
     var reactions: MessageReactionsConfiguration?
+    /// Стикеры и большие эмодзи (рендер содержимого и тапы — у приложения).
+    var stickerRendering: ChatStickerRendering?
 
     /// Совместимость с API exyte: делегат заворачивается в `MessageReactionsConfiguration`.
     /// Только запись — хранится конфигурация, а не делегат.
@@ -467,7 +469,8 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
                     guard config.canReact(message) else { return }
                     config.onEvent(message, .resolve(emoji, on: message, source: .chip))
                 }
-            }
+            },
+            stickerRendering: stickerRendering
 //            listSwipeActions: listSwipeActions
         )
         .applyIf(!isScrollEnabled) {
@@ -572,6 +575,7 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
                 messageFont: messageFont,
                 tapDocumentClosure: tapDocumentClosure,
                 groupUsers: groupUsers)
+            .environment(\.chatStickerRendering, stickerRendering)
             .onTapGesture {
                 hideMessageMenu()
             }
@@ -793,6 +797,15 @@ public extension ChatView {
     func messageReactions(_ configuration: MessageReactionsConfiguration?) -> ChatView {
         var view = self
         view.reactions = configuration
+        return view
+    }
+
+    /// Стикеры без пузыря и большие эмодзи (1–3 эмодзи) — по мотивам Telegram.
+    /// Содержимое (Lottie, кеш файлов) рисует приложение; без конфигурации стикер
+    /// показывается статичной превьюшкой, а эмодзи-сообщения — обычным пузырём.
+    func stickerRendering(_ configuration: ChatStickerRendering?) -> ChatView {
+        var view = self
+        view.stickerRendering = configuration
         return view
     }
 

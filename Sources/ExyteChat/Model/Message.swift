@@ -71,6 +71,8 @@ public struct Message: Identifiable, Hashable {
     /// локальным файлом из приложения. Не задано — прежнее поведение.
     /// Из `==`/`hash` исключено намеренно, см. `MessageVoicePlayback`.
     public var voicePlayback: MessageVoicePlayback?
+    /// Стикер: сообщение рисуется без пузыря (`MessageView.stickerComposition`).
+    public var sticker: MessageSticker?
     public var triggerRedraw: UUID?
     public var isStreaming: Bool
 
@@ -90,6 +92,7 @@ public struct Message: Identifiable, Hashable {
                 isDeleted: Bool = false,
                 publicationAttachment: MessagePublicationAttachment? = nil,
                 voicePlayback: MessageVoicePlayback? = nil,
+                sticker: MessageSticker? = nil,
                 isStreaming: Bool = false) {
 
         self.id = id
@@ -106,6 +109,7 @@ public struct Message: Identifiable, Hashable {
         self.isDeleted = isDeleted
         self.publicationAttachment = publicationAttachment
         self.voicePlayback = voicePlayback
+        self.sticker = sticker
         self.isStreaming = isStreaming
     }
 
@@ -153,7 +157,8 @@ extension Message: Equatable {
         lhs.replyMessage == rhs.replyMessage &&
         lhs.isStreaming == rhs.isStreaming &&
         lhs.triggerRedraw == rhs.triggerRedraw &&
-        lhs.publicationAttachment == rhs.publicationAttachment
+        lhs.publicationAttachment == rhs.publicationAttachment &&
+        lhs.sticker == rhs.sticker
     }
 
     // `hash` задан явно и зеркалит `==`. Синтезированный вариант брал ВСЕ хранимые
@@ -173,6 +178,7 @@ extension Message: Equatable {
         hasher.combine(isStreaming)
         hasher.combine(triggerRedraw)
         hasher.combine(publicationAttachment)
+        hasher.combine(sticker)
     }
 }
 
@@ -275,7 +281,8 @@ public struct ReplyMessage: Codable, Identifiable, Hashable {
         lhs.createdAt == rhs.createdAt &&
         lhs.text == rhs.text &&
         lhs.attachments == rhs.attachments &&
-        lhs.recording == rhs.recording
+        lhs.recording == rhs.recording &&
+        lhs.sticker == rhs.sticker
     }
 
     public var id: String
@@ -285,13 +292,16 @@ public struct ReplyMessage: Codable, Identifiable, Hashable {
     public var text: String
     public var attachments: [Attachment]
     public var recording: Recording?
+    /// Ответ на стикер: цитата показывает его эмодзи (подпись локализует приложение).
+    public var sticker: MessageSticker?
 
     public init(id: String,
                 user: User,
                 createdAt: Date,
                 text: String = "",
                 attachments: [Attachment] = [],
-                recording: Recording? = nil) {
+                recording: Recording? = nil,
+                sticker: MessageSticker? = nil) {
 
         self.id = id
         self.user = user
@@ -299,17 +309,18 @@ public struct ReplyMessage: Codable, Identifiable, Hashable {
         self.text = text
         self.attachments = attachments
         self.recording = recording
+        self.sticker = sticker
     }
 
     func toMessage() -> Message {
-        Message(id: id, user: user, createdAt: createdAt, text: text, attachments: attachments, recording: recording)
+        Message(id: id, user: user, createdAt: createdAt, text: text, attachments: attachments, recording: recording, sticker: sticker)
     }
 }
 
 public extension Message {
 
     func toReplyMessage() -> ReplyMessage {
-        ReplyMessage(id: id, user: user, createdAt: createdAt, text: text, attachments: attachments, recording: recording)
+        ReplyMessage(id: id, user: user, createdAt: createdAt, text: text, attachments: attachments, recording: recording, sticker: sticker)
     }
 }
 
