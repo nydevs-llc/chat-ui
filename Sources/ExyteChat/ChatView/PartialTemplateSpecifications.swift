@@ -31,7 +31,7 @@ public extension ChatView where MessageContent == EmptyView {
         self.draft = draft
         self.didChangeDraft = didChangeDraft
         self.groupUsers = groupUsers
-        self.reactionDelegate = reactionDelegate
+        self.reactions = reactionDelegate.map(MessageReactionsConfiguration.init(delegate:))
     }
 }
 
@@ -59,7 +59,7 @@ public extension ChatView where InputViewContent == EmptyView {
         self.draft = draft
         self.didChangeDraft = didChangeDraft
         self.groupUsers = groupUsers
-        self.reactionDelegate = reactionDelegate
+        self.reactions = reactionDelegate.map(MessageReactionsConfiguration.init(delegate:))
     }
 }
 
@@ -87,7 +87,7 @@ public extension ChatView where MenuAction == DefaultMessageMenuAction {
         self.draft = draft
         self.didChangeDraft = didChangeDraft
         self.groupUsers = groupUsers
-        self.reactionDelegate = reactionDelegate
+        self.reactions = reactionDelegate.map(MessageReactionsConfiguration.init(delegate:))
     }
 }
 
@@ -113,7 +113,7 @@ public extension ChatView where MessageContent == EmptyView, InputViewContent ==
         self.draft = draft
         self.didChangeDraft = didChangeDraft
         self.groupUsers = groupUsers
-        self.reactionDelegate = reactionDelegate
+        self.reactions = reactionDelegate.map(MessageReactionsConfiguration.init(delegate:))
     }
 }
 
@@ -139,7 +139,7 @@ public extension ChatView where InputViewContent == EmptyView, MenuAction == Def
         self.draft = draft
         self.didChangeDraft = didChangeDraft
         self.groupUsers = groupUsers
-        self.reactionDelegate = reactionDelegate
+        self.reactions = reactionDelegate.map(MessageReactionsConfiguration.init(delegate:))
     }
 }
 
@@ -165,7 +165,7 @@ public extension ChatView where MessageContent == EmptyView, MenuAction == Defau
         self.draft = draft
         self.didChangeDraft = didChangeDraft
         self.groupUsers = groupUsers
-        self.reactionDelegate = reactionDelegate
+        self.reactions = reactionDelegate.map(MessageReactionsConfiguration.init(delegate:))
     }
 }
 
@@ -189,6 +189,6 @@ public extension ChatView where MessageContent == EmptyView, InputViewContent ==
         self.draft = draft
         self.didChangeDraft = didChangeDraft
         self.groupUsers = groupUsers
-        self.reactionDelegate = reactionDelegate
+        self.reactions = reactionDelegate.map(MessageReactionsConfiguration.init(delegate:))
     }
 }

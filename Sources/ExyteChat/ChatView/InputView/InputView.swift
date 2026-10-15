@@ -41,6 +41,10 @@ public enum InputViewAction {
 
     case saveEdit
     case cancelEdit
+
+    /// Убрать цитату ответа из панели ввода (для кастомного `inputViewBuilder`,
+    /// у которого нет доступа к `InputViewModel.attachments`).
+    case cancelReply
 }
 
 public enum InputViewState {

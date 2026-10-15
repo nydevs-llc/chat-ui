@@ -14,13 +14,6 @@ enum MessageMenuAlignment {
 
 struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
     
-    struct ReactionConfig {
-        /// The delegate used to configure our Reaction views on a per message basis
-        var delegate: ReactionDelegate?
-        /// Our internal didReact handler that allows for proper view dismissal
-        var didReact: (ReactionType?) -> ()
-    }
-
     @Environment(\.chatTheme) private var theme
     @Environment(\.dismiss) var dismiss
     
@@ -66,8 +59,10 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
     var defaultTransition: AnyTransition = .scaleAndFade
     /// The menu button actions to be rendered
     var onAction: (ActionEnum) -> ()
-    /// The current reaction configuration (delegate and callback)
-    var reactionHandler: ReactionConfig
+    /// Реакции; `nil` — пилюли нет.
+    var reactions: MessageReactionsConfiguration?
+    /// Меню закончило закрываться — снять его с экрана.
+    var onDismissed: () -> Void
     /// The main message, rendered as a button
     var mainButton: () -> MainButton
 
@@ -116,11 +111,15 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
     
     /// This flag is used to adjust the dismiss animation
     @State private var didReact: Bool = false
-    /// We use this `onReaction` handler in order to set our `didReact` flag and kick off the dismissal sequence
-    private func handleOnReaction(_ rt: ReactionType?) {
-        guard let rt else { transitionViewState(to: .ready); return }
+    /// Пилюля раскрыта в полную сетку эмоджи (меню действий в это время спрятано).
+    @State private var reactionsExpanded: Bool = false
+    /// Выбор отдаётся приложению сразу, а не после анимации закрытия: как у Telegram,
+    /// реакция появляется под пузырём, пока меню ещё гаснет.
+    private func handlePick(_ emoji: String, source: MessageReactionEvent.Source) {
+        guard let reactions, !didReact else { return }
         didReact = true
-        dismissSelf(rt)
+        reactions.onEvent(message, .resolve(emoji, on: message, source: source))
+        dismissSelf()
     }
     
     /// The max height for the entire message menu and surrounding views
@@ -138,23 +137,15 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
     }
     
     var shouldShowReactionSelectionView: Bool {
-        guard let delegate = reactionHandler.delegate else { return false }
-        return delegate.canReact(to: message)
+        reactions?.canReact(message) ?? false
     }
-    
+
     var shouldShowReactionOverviewView: Bool {
-        guard let delegate = reactionHandler.delegate else { return false }
-        return delegate.shouldShowOverview(for: message)
+        reactions?.showsOverview(message) ?? false
     }
-    
+
     var shouldAllowEmojiSearch: Bool {
-        guard let delegate = reactionHandler.delegate else { return false }
-        return delegate.allowEmojiSearch(for: message)
-    }
-    
-    var reactions: [ReactionType]? {
-        guard let delegate = reactionHandler.delegate else { return nil }
-        return delegate.reactions(for: message)
+        reactions?.allowsEmojiGrid(for: message) ?? false
     }
     
     public var body: some View {
@@ -183,12 +174,7 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .edgesIgnoringSafeArea(.all)
         .background(
-            ZStack {
-                Rectangle()
-                    .foregroundStyle(.ultraThinMaterial)
-                Rectangle()
-                    .fill(.primary.opacity(0.1))
-            }
+            ContextMenuBackdrop()
             .edgesIgnoringSafeArea(.all)
             .opacity(backgroundOpacity)
             .onTapGesture {
@@ -238,11 +224,6 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
             reactionSelectionIsVisible = shouldShowReactionSelectionView
             menuIsVisible = true
             verticalOffset = UIScreen.main.bounds.height * 2
-            
-            /// Kick off the background animation
-            withAnimation(.easeInOut(duration: animationDuration)) {
-                backgroundOpacity = 1.0
-            }
             
         case .original:
             /// Our views were rendered transparently in the `.prepare` state allowing us to
@@ -296,13 +277,17 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
             recomputeMessageViewport()
             /// Calculate our vertical offset so our message lines up with the message from our TableView
             verticalOffset = calcVertOffset(previousState: oldState)
-            /// Animate our rendered message into view
-            withAnimation(.easeInOut(duration: animationDuration * 1.33)) {
-                messageMenuOpacity = 1.0
+            /// Копия пузыря встаёт ровно поверх оригинала и показывается сразу, а фон
+            /// начинает размываться только сейчас. Telegram держит пузырь чётким всё
+            /// время: раньше фон стартовал ещё в `.prepare`, а копия проявлялась за
+            /// ~0.4 с — сообщение на миг пропадало под блюром.
+            messageMenuOpacity = 1.0
+            withAnimation(ContextMenuStyle.backdropAnimation) {
+                backgroundOpacity = 1.0
             }
             
         case .ready:
-            withAnimation(.bouncy(duration: animationDuration)) {
+            withAnimation(ContextMenuStyle.appearSpring) {
                 reactionSelectionIsVisible = shouldShowReactionSelectionView
                 reactionOverviewIsVisible = shouldShowReactionOverviewView
                 menuIsVisible = true
@@ -311,7 +296,7 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
             }
             
         case .keyboard:
-            withAnimation(.bouncy(duration: animationDuration)) {
+            withAnimation(ContextMenuStyle.appearSpring) {
                 reactionSelectionIsVisible = true
                 reactionOverviewIsVisible = false
                 menuIsVisible = false
@@ -320,15 +305,16 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
             }
             
         case .dismiss:
-            withAnimation(.snappy(duration: animationDuration * 0.66)) {
+            withAnimation(ContextMenuStyle.dismissAnimation) {
+                reactionsExpanded = false
                 reactionSelectionIsVisible = didReact ? true : false
                 reactionOverviewIsVisible = false
                 menuIsVisible = false
                 verticalOffset = calcVertOffset(previousState: oldState)
             }
-            
+
             DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(Int(animationDuration * 333))) {
-                withAnimation(.easeOut) {
+                withAnimation(ContextMenuStyle.backdropAnimation) {
                     messageMenuOpacity = 0
                     backgroundOpacity = 0
                 }
@@ -477,29 +463,6 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
     }
     
     @ViewBuilder
-    private func alignedRow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        HStack {
-            
-            if alignment == .left && !isGroup {
-                content().padding(.leading, 16)
-                Spacer()
-            } else if alignment == .left && isGroup {
-                content()
-                Spacer()
-            } else { // .right
-                Spacer()
-                content()
-            }
-        }
-        .padding(
-            alignment == .right || (alignment == .left && !isGroup) ? .trailing : .leading,
-            alignment == .right
-                ? max(0, trailingPadding - 8) // // or - 16
-                : (alignment == .left && !isGroup ? trailingPadding : leadingPadding)
-        )
-    }
-    
-    @ViewBuilder
     func messageMenuView() -> some View {
         VStack(spacing: verticalSpacing) {
             if reactionOverviewIsVisible, case .scrollView = messageMenuStyle {
@@ -512,37 +475,17 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
             }
             
             if reactionSelectionIsVisible {
-                alignedRow {
-                    ReactionSelectionView(
-                        viewModel: viewModel,
-                        backgroundColor: Color(UIColor.systemGray6),
-                        selectedColor: theme.colors.myMessage,
-                        animation: .bouncy(duration: animationDuration),
-                        animationDuration: animationDuration,
-                        currentReactions: message.reactions.filter({ $0.user.isCurrentUser }),
-                        customReactions: reactions,
-                        allowEmojiSearch: shouldAllowEmojiSearch,
-                        alignment: alignment,
-                        leadingPadding: leadingPadding,
-                        trailingPadding: trailingPadding,
-                        reactionClosure: handleOnReaction,
-                        alignWithMenuStart: true,
-                        uiScale: 1.18 
-                    )
-                    .frame(maxWidth: .infinity,
-                           alignment: alignment == .right ? .trailing : .leading)
-                    .maxHeightGetter($reactionSelectionHeight)
-                    .transition(defaultTransition)
+                reactionPillRow()
+                    .padding(.bottom, reactionSelectionBottomPadding)
+                    .transition(growTransition(from: pillTailAnchor))
                     .zIndex(2)
-                }
-                .padding(.bottom, reactionSelectionBottomPadding)
             }
-            
+
             messageBubbleContainer()
-            
+
             if menuIsVisible {
                 menuView()
-                    .transition(defaultTransition)
+                    .transition(growTransition(from: menuGrowAnchor))
             }
         }
         .overflowContainer(messageMenuStyle, viewState: viewState, onTap: {
@@ -604,71 +547,150 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
         messageViewportHeight = min(bubble, available)
     }
 
-    private struct MenuButton: Identifiable {
-        let id: Int
-        let action: ActionEnum
+    // MARK: - Telegram-style layout
 
-        init(id: Int, action: ActionEnum) {
-            self.id = id
-            self.action = action
+    private var isIncoming: Bool { alignment == .left }
+
+    /// Фрейм пузыря на экране. Пока копия в меню не замерилась — фрейм ячейки.
+    private var anchorFrame: CGRect {
+        viewModel.messageFrame == .zero ? cellFrame : viewModel.messageFrame
+    }
+
+    /// Свои уже поставленные реакции идут первыми, чтобы их было легко снять (как в форке до этого).
+    private var pillEmojis: [String] {
+        let base = reactions?.quickReactions(for: message) ?? MessageReactionsConfiguration.telegramQuickReactions
+        let own = message.reactions.filter { $0.user.isCurrentUser }.compactMap(\.emoji)
+        var result = own.filter { !base.contains($0) }
+        for emoji in base where !result.contains(emoji) { result.append(emoji) }
+        return Array(result.prefix(ContextMenuStyle.maxVisibleEmojis))
+    }
+
+    private var pillLayout: ReactionPillLayout {
+        ReactionPillLayout(
+            anchor: anchorFrame,
+            isIncoming: isIncoming,
+            slotCount: pillEmojis.count + (shouldAllowEmojiSearch ? 1 : 0),
+            screenWidth: chatViewFrame.width
+        )
+    }
+
+    /// Пилюля вырастает из хвоста — точки над краем пузыря.
+    private var pillTailAnchor: UnitPoint {
+        let layout = pillLayout
+        return UnitPoint(x: (layout.minX + layout.tailX) / chatViewFrame.width, y: 1)
+    }
+
+    /// Отступ меню от края экрана: Telegram ровняет его по краю пузыря со стороны отправителя.
+    private var menuEdgeInset: CGFloat {
+        let inset = isIncoming ? anchorFrame.minX : chatViewFrame.width - anchorFrame.maxX
+        return max(ContextMenuStyle.actionsScreenInset, inset)
+    }
+
+    /// Меню вырастает из угла под пузырём, а не из своего центра.
+    private var menuGrowAnchor: UnitPoint {
+        let x = isIncoming ? menuEdgeInset : chatViewFrame.width - menuEdgeInset
+        return UnitPoint(x: x / chatViewFrame.width, y: 0)
+    }
+
+    private func growTransition(from anchor: UnitPoint) -> AnyTransition {
+        .scale(scale: 0.01, anchor: anchor).combined(with: .opacity)
+    }
+
+    @ViewBuilder
+    private func reactionPillRow() -> some View {
+        let layout = pillLayout
+        ReactionPillView(
+            emojis: pillEmojis,
+            selectedEmojis: message.reactions.filter { $0.user.isCurrentUser }.compactMap(\.emoji),
+            layout: layout,
+            selectedColor: theme.colors.myMessage,
+            allowsExpand: shouldAllowEmojiSearch,
+            isExpanded: reactionsExpanded,
+            expandedHeight: expandedPanelHeight,
+            expandAccessibilityLabel: reactions?.expandAccessibilityLabel ?? "More reactions",
+            collapseAccessibilityLabel: reactions?.collapseAccessibilityLabel ?? "Close",
+            onExpandedChange: setReactionsExpanded,
+            onPick: handlePick
+        )
+        // Строка держит высоту свёрнутой пилюли: раскрытая сетка растёт вниз поверх
+        // пузыря (zIndex строки выше), а не расталкивает раскладку.
+        .frame(height: ContextMenuStyle.pillHeight, alignment: .top)
+        .padding(.leading, layout.minX)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, ContextMenuStyle.pillBubbleGap)
+        .maxHeightGetter($reactionSelectionHeight)
+    }
+
+    /// Высота раскрытой сетки: Telegram держит её около половины экрана.
+    private var expandedPanelHeight: CGFloat {
+        min(380, chatViewFrame.height * 0.5)
+    }
+
+    private func setReactionsExpanded(_ expanded: Bool) {
+        guard viewState == .ready, expanded != reactionsExpanded else { return }
+        // Считаем ДО смены флагов: нужны текущие верх стека и высота меню.
+        let expandedOffset = expandedVerticalOffset()
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.86)) {
+            reactionsExpanded = expanded
+            menuIsVisible = !expanded
+            reactionOverviewIsVisible = expanded ? false : shouldShowReactionOverviewView
+            verticalOffset = expanded ? expandedOffset : calcVertOffset(previousState: .ready)
         }
     }
-    
+
+    /// Верх пилюли остаётся на месте; стек поднимается ровно настолько, чтобы раскрытая
+    /// сетка влезла над нижней безопасной зоной. Меню прячется — стек становится ниже,
+    /// а `.position` центрирует, поэтому центр пересчитывается от сохранённого верха.
+    private func expandedVerticalOffset() -> CGFloat {
+        let top = messageMenuFrame.minY
+        let menuBar = menuIsVisible ? menuStyle.height(menuHeight) : 0
+        let stackHeight = max(0, messageMenuFrame.height - menuBar)
+        let bottomLimit = chatViewFrame.height - UIApplication.safeArea.bottom - 8
+        let overflow = max(0, top + expandedPanelHeight - bottomLimit)
+        let newTop = max(UIApplication.safeArea.top + 8, top - overflow)
+        return newTop + stackHeight / 2
+    }
+
     @ViewBuilder
     func menuView() -> some View {
-        let buttons = filteredMenuActions().enumerated().map { MenuButton(id: $0, action: $1) }
-        
-        HStack {
-            if alignment == .right {
-                Spacer() // outgoing message — spacer on the left
-            }
+        let actions = filteredMenuActions()
+        let regular = actions.filter { $0.type() != .delete }
+        let destructive = actions.filter { $0.type() == .delete }
 
-            if alignment == .left && !isGroup {
-                // incoming private message — spacer on the right, with extra leading padding
-                menuContent(buttons)
-                    .padding(.leading, 16)
-                Spacer()
-            } else if alignment == .left && isGroup {
-                // incoming group message — spacer on the right
-                menuContent(buttons)
-                Spacer()
-            } else if alignment == .right {
-                // outgoing message — menu comes after spacer
-                menuContent(buttons)
+        VStack(spacing: 0) {
+            menuRows(regular)
+            if !regular.isEmpty && !destructive.isEmpty {
+                ContextMenuSeparator()
             }
+            menuRows(destructive)
         }
-        .padding(
-            alignment == .right || (alignment == .left && !isGroup)
-            ? .trailing
-            : .leading,
-            alignment == .right
-            ? max(0, trailingPadding - 8) // or - 16
-            : (alignment == .left && !isGroup ? trailingPadding : leadingPadding)
-        )
-        .padding(.top, 8)
+        .padding(.vertical, ContextMenuStyle.actionsVerticalInset)
+        .frame(minWidth: ContextMenuStyle.actionsMinWidth, maxWidth: ContextMenuStyle.actionsMaxWidth)
+        .fixedSize(horizontal: true, vertical: false)
+        .menuContainer(menuStyle)
+        .clipShape(RoundedRectangle(cornerRadius: ContextMenuStyle.actionsCornerRadius, style: .continuous))
+        .contextMenuSurface(RoundedRectangle(cornerRadius: ContextMenuStyle.actionsCornerRadius, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: isIncoming ? .leading : .trailing)
+        .padding(isIncoming ? .leading : .trailing, menuEdgeInset)
+        .padding(.top, ContextMenuStyle.actionsBubbleGap)
         .maxHeightGetter($menuHeight)
-        .frame(maxWidth: .infinity)
-        
-        .simultaneousGesture(       // soft impact on any tap inside the menu content
-            TapGesture().onEnded {
-                softTapHaptic()
-            }
-        )
     }
 
     @ViewBuilder
-    private func menuContent(_ buttons: [MenuButton]) -> some View {
-        VStack(spacing: 4) {
-            ForEach(buttons) { button in
-                menuButton(
-                    title: button.action.title(),
-                    icon: button.action.icon(),
-                    action: button.action,
-                    isDestructive: button.action.type() == .delete
-                )
-            }
+    private func menuRows(_ actions: [ActionEnum]) -> some View {
+        ForEach(Array(actions.enumerated()), id: \.offset) { _, action in
+            ContextMenuActionRow(
+                title: action.title(),
+                icon: action.icon(),
+                isDestructive: action.type() == .delete,
+                font: getFont ?? .system(size: 17),
+                action: {
+                    softTapHaptic()
+                    onAction(action)
+                    dismissSelf()
+                }
+            )
         }
-        .menuContainer(menuStyle)
     }
     
     private func filteredMenuActions() -> [ActionEnum] {
@@ -697,54 +719,13 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
         return nonDestructive + destructive
     }
 
-    @ViewBuilder
-     func menuButton(title: String,
-                            icon: Image,
-                            action: ActionEnum,
-                            isDestructive: Bool) -> some View {
-        HStack(spacing: 0) {
-            ZStack {
-                Color(uiColor: .systemGray6)
-                    .cornerRadius(12)
-                    .overlay(
-                        Group {
-                            if #available(iOS 17.0, *) {
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(Color(uiColor: .label).opacity(0.2), lineWidth: 0.3)
-                            }
-                        }
-                    )
-
-                HStack {
-                    Text(title)
-                        .foregroundColor(isDestructive ? .red : .primary)
-
-                    Spacer()
-
-                    icon
-                        .renderingMode(.template)
-                        .foregroundColor(isDestructive ? .red : .primary)
-                }
-                .font(getFont)
-                .padding(.vertical, 11)
-                .padding(.horizontal, 12)
-            }
-            .frame(width: 208)
-            .fixedSize()
-            .onTapGesture {
-                onAction(action)
-                dismissSelf()
-            }
-        }
-    }
-    
-    private func dismissSelf(_ rt: ReactionType? = nil) {
+    private func dismissSelf() {
         if keyboardState.isShown { keyboardState.resignFirstResponder() }
         transitionViewState(to: .dismiss)
         let delay = didReact ? Int(animationDuration * 1333) : Int(animationDuration * 1000)
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(delay)) {
             isShowingMenu = false
-            reactionHandler.didReact(rt)
+            onDismissed()
             dismiss()
         }
     }

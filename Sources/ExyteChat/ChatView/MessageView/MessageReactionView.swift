@@ -196,3 +196,121 @@ struct ReactionBubble: View {
             )
     }
 }
+
+// MARK: - Telegram-style reaction chips
+
+/// Обработчик тапа по чипу реакции. Кладётся в окружение каждой ячейки ленты
+/// (`SonataUIList`): ячейка — новый корень SwiftUI и окружение `ChatView` не наследует.
+private struct MessageReactionTapKey: EnvironmentKey {
+    static let defaultValue: ((Message, String) -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var messageReactionTap: ((Message, String) -> Void)? {
+        get { self[MessageReactionTapKey.self] }
+        set { self[MessageReactionTapKey.self] = newValue }
+    }
+}
+
+/// Чипы реакций, сгруппированные по эмоджи (Telegram). Внутри чипа — эмоджи и аватарки
+/// поставивших (пока реакций на сообщении не больше трёх и аватарки известны), иначе
+/// счётчик. Чип со своей реакцией залит акцентом. Тап переключает свою реакцию этим эмоджи.
+/// Порядок — порядок первых появлений в `message.reactions` (сервер отдаёт по времени).
+struct ReactionChipsRow: View {
+    @Environment(\.chatTheme) private var theme
+    @Environment(\.messageReactionTap) private var onTap
+
+    let message: Message
+    /// На исходящем пузыре (заливка цветом бренда) акцент — белый.
+    let isOutgoingBubble: Bool
+
+    struct Chip: Identifiable, Equatable {
+        let emoji: String
+        let users: [User]
+        let isMine: Bool
+        let isPending: Bool
+        var count: Int { users.count }
+        var id: String { emoji }
+    }
+
+    static func chips(for reactions: [Reaction]) -> [Chip] {
+        var order: [String] = []
+        var grouped: [String: [Reaction]] = [:]
+        for reaction in reactions {
+            guard let emoji = reaction.emoji else { continue }
+            if grouped[emoji] == nil { order.append(emoji) }
+            grouped[emoji, default: []].append(reaction)
+        }
+        return order.map { emoji in
+            let group = grouped[emoji] ?? []
+            let mine = group.first { $0.user.isCurrentUser }
+            var pending = false
+            if let mine, case .sending = mine.status { pending = true }
+            return Chip(emoji: emoji, users: group.map(\.user), isMine: mine != nil, isPending: pending)
+        }
+    }
+
+    private var chips: [Chip] { Self.chips(for: message.reactions) }
+
+    /// Telegram показывает лица, пока реакций мало; дальше — числа.
+    private var showsAvatars: Bool {
+        message.reactions.count <= 3
+            && message.reactions.allSatisfy { $0.user.avatarURL != nil || $0.user.avatarCachedImage != nil }
+    }
+
+    private var accent: Color { isOutgoingBubble ? .white : theme.colors.myMessage }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(chips) { chip in
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    onTap?(message, chip.emoji)
+                } label: {
+                    chipLabel(chip)
+                }
+                .buttonStyle(.plain)
+                .disabled(onTap == nil)
+                .transition(.scale(scale: 0.4).combined(with: .opacity))
+            }
+        }
+        .animation(.interpolatingSpring(stiffness: 900, damping: 60), value: chips)
+    }
+
+    private func chipLabel(_ chip: Chip) -> some View {
+        HStack(spacing: 4) {
+            Text(chip.emoji)
+                .font(.system(size: 16))
+            if showsAvatars {
+                HStack(spacing: -6) {
+                    ForEach(Array(chip.users.prefix(2).enumerated()), id: \.offset) { _, user in
+                        AvatarView(url: user.avatarURL, cachedImage: user.avatarCachedImage, avatarSize: 22)
+                            .overlay(Circle().strokeBorder(chipFill(chip), lineWidth: 1.5))
+                    }
+                }
+            } else if chip.count > 1 || !chip.isMine {
+                Text("\(chip.count)")
+                    .font(.system(size: 14, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundColor(countColor(chip))
+            }
+        }
+        .padding(.leading, 8)
+        .padding(.trailing, showsAvatars ? 3 : 8)
+        .frame(height: 28)
+        .background(Capsule(style: .continuous).fill(chipFill(chip)))
+        .opacity(chip.isPending ? 0.7 : 1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(chip.emoji) \(chip.count)")
+        .accessibilityAddTraits(chip.isMine ? [.isButton, .isSelected] : .isButton)
+    }
+
+    private func chipFill(_ chip: Chip) -> Color {
+        chip.isMine ? accent : accent.opacity(isOutgoingBubble ? 0.22 : 0.14)
+    }
+
+    private func countColor(_ chip: Chip) -> Color {
+        if chip.isMine { return isOutgoingBubble ? theme.colors.myMessage : .white }
+        return isOutgoingBubble ? .white : accent
+    }
+}

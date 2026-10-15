@@ -87,7 +87,15 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
     let sections: [MessagesSection]
     let ids: [String]
     let didSendMessage: (DraftMessage) -> Void
-    var reactionDelegate: ReactionDelegate?
+    /// Реакции на сообщения (меню, сетка эмоджи, чипы). `nil` — реакции выключены.
+    var reactions: MessageReactionsConfiguration?
+
+    /// Совместимость с API exyte: делегат заворачивается в `MessageReactionsConfiguration`.
+    /// Только запись — хранится конфигурация, а не делегат.
+    var reactionDelegate: ReactionDelegate? {
+        get { nil }
+        set { reactions = newValue.map(MessageReactionsConfiguration.init(delegate:)) }
+    }
     let draft: String
     let didChangeDraft: (String) -> Void
 
@@ -115,6 +123,11 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
     // MARK: - Customization
 
     var isListAboveInputView: Bool = true
+    /// Панель ввода лежит ПОВЕРХ ленты, как у Telegram: лента уходит до низа экрана
+    /// и прокручивается под прозрачной панелью, а нижний отступ ленты равен высоте
+    /// панели (+ safe area), чтобы последнее сообщение не пряталось под ней.
+    /// Работает только для `isListAboveInputView == true`.
+    var floatingInputView: Bool = false
     var showDateHeaders: Bool = true
     var isScrollEnabled: Bool = true
     var avatarSize: CGFloat = 32
@@ -149,6 +162,7 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
     @State private var tableContentHeight: CGFloat = 0
     @State private var cellFrames = [String: CGRect]()
     @State private var inputViewSize = CGSize.zero
+    @State private var floatingBarSize = CGSize.zero
 
     @State private var showAttachmentSavedAlert: Bool = false
     @State private var isUploading: Bool = false
@@ -180,7 +194,7 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
         self.draft = draft
         self.didChangeDraft = didChangeDraft
         self.groupUsers = groupUsers
-        self.reactionDelegate = reactionDelegate
+        self.reactions = reactionDelegate.map(MessageReactionsConfiguration.init(delegate:))
     }
 
     public var body: some View {
@@ -333,7 +347,38 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
         .environmentObject(globalFocusState)
     }
 
+    @ViewBuilder
     var mainView: some View {
+        if floatingInputView && isListAboveInputView {
+            floatingMainView
+        } else {
+            stackedMainView
+        }
+    }
+
+    /// Лента во весь экран + панель ввода поверх неё.
+    private var floatingMainView: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .bottom) {
+                listWithButton(bottomInset: floatingBarHeight + proxy.safeAreaInsets.bottom)
+                    .ignoresSafeArea(.container, edges: .bottom)
+
+                VStack(spacing: 0) {
+                    if let builder = betweenListAndInputViewBuilder {
+                        builder()
+                    }
+                    inputView
+                }
+                .sizeGetter($floatingBarSize)
+            }
+        }
+        // Used to prevent ChatView movement during Emoji Keyboard invocation
+        .ignoresSafeArea(isShowingMenu ? .keyboard : [])
+    }
+
+    private var floatingBarHeight: CGFloat { floatingBarSize.height }
+
+    var stackedMainView: some View {
         VStack(spacing: 0) {
 
             if isListAboveInputView {
@@ -354,12 +399,16 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
         .ignoresSafeArea(isShowingMenu ? .keyboard : [])
     }
 
-    @ViewBuilder
     var listWithButton: some View {
+        listWithButton(bottomInset: 0)
+    }
+
+    @ViewBuilder
+    func listWithButton(bottomInset: CGFloat) -> some View {
         switch type {
         case .conversation:
             ZStack(alignment: .bottomTrailing) {
-                list
+                list(bottomInset: bottomInset)
 
                 if !isScrolledToBottom {
                     Button {
@@ -370,16 +419,17 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
                             .circleBackground(theme.colors.friendMessage)
                     }
                     .padding(8)
+                    .padding(.bottom, bottomInset)
                 }
             }
 
         case .comments:
-            list
+            list(bottomInset: bottomInset)
         }
     }
 
     @ViewBuilder
-    var list: some View {
+    func list(bottomInset: CGFloat) -> some View {
         SonataUIList(
 //        UIList(
             viewModel: viewModel,
@@ -410,7 +460,14 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
             showAvatars: showAvatars,
             groupUsers: groupUsers,
             readTracker: messageReadTracker,
-            scrollToMessageOnAppear: scrollToMessageOnAppear
+            scrollToMessageOnAppear: scrollToMessageOnAppear,
+            bottomContentInset: bottomInset,
+            reactionTap: reactions.map { config in
+                { message, emoji in
+                    guard config.canReact(message) else { return }
+                    config.onEvent(message, .resolve(emoji, on: message, source: .chip))
+                }
+            }
 //            listSwipeActions: listSwipeActions
         )
         .applyIf(!isScrollEnabled) {
@@ -499,10 +556,8 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
             font: messageFont,
             animationDuration: messageMenuAnimationDuration,
             onAction: menuActionClosure(row.message),
-            reactionHandler: MessageMenu.ReactionConfig(
-                delegate: reactionDelegate,
-                didReact: reactionClosure(row.message)
-            )
+            reactions: reactions,
+            onDismissed: hideMessageMenu
         ) {
             ChatMessageView(
                 viewModel: viewModel,
@@ -530,22 +585,6 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
             return message.user.isCurrentUser ? .right : .left
         case .comments:
             return .left
-        }
-    }
-    
-    /// Our default reactionCallback flow if the user supports Reactions by implementing the didReactToMessage closure
-    private func reactionClosure(_ message: Message) -> (ReactionType?) -> () {
-        return { reactionType in
-            Task {
-                // Run the callback on the main thread
-                await MainActor.run {
-                    // Hide the menu
-                    hideMessageMenu()
-                    // Send the draft reaction
-                    guard let reactionDelegate, let reactionType else { return }
-                    reactionDelegate.didReact(to: message, reaction: DraftReaction(messageID: message.id, type: reactionType))
-                }
-            }
         }
     }
     
@@ -628,6 +667,14 @@ public extension ChatView {
     func isScrollEnabled(_ isScrollEnabled: Bool) -> ChatView {
         var view = self
         view.isScrollEnabled = isScrollEnabled
+        return view
+    }
+
+    /// Панель ввода поверх ленты (Telegram-стиль). Фон панели задаёт сам `inputViewBuilder`:
+    /// чтобы лента просвечивала, он должен быть прозрачным.
+    func floatingInputView(_ isFloating: Bool = true) -> ChatView {
+        var view = self
+        view.floatingInputView = isFloating
         return view
     }
 
@@ -741,6 +788,14 @@ public extension ChatView {
         return view
     }
     
+    /// Реакции в стиле Telegram: быстрый ряд, сетка эмоджи, чипы под пузырём.
+    /// Приложение получает готовое намерение (`.set` / `.remove` + источник).
+    func messageReactions(_ configuration: MessageReactionsConfiguration?) -> ChatView {
+        var view = self
+        view.reactions = configuration
+        return view
+    }
+
     /// Sets a ReactionDelegate on the ChatView for handling and configuring message reactions
     func messageReactionDelegate(_ configuration: ReactionDelegate) -> ChatView {
         var view = self

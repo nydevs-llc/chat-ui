@@ -56,6 +56,11 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
     let groupUsers: [User]
     var readTracker: MessageReadTracker?
     var scrollToMessageOnAppear: String?
+    /// Отступ под плавающую панель ввода (`ChatView.floatingInputView`). У перевёрнутой
+    /// ленты переписки визуальный низ — это `contentInset.top`.
+    var bottomContentInset: CGFloat = 0
+    /// Тап по чипу реакции под пузырём (эмоджи чипа); `nil` — реакции выключены.
+    var reactionTap: ((Message, String) -> Void)?
 
     func makeUIView(context: Context) -> UICollectionView {
         let layout = UIListLayout.makeLayout(
@@ -112,6 +117,10 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
 
     func updateUIView(_ cv: UICollectionView, context: Context) {
         cv.isScrollEnabled = isScrollEnabled
+        applyBottomInset(to: cv)
+        // Координатор держит копию `outer` со времени создания — свежий обработчик
+        // кладём отдельно, иначе ячейки звали бы замыкание из первого рендера.
+        context.coordinator.reactionTap = reactionTap
         // Данные не изменились — списку нечего делать.
         //
         // `apply(sections:)` на каждой перерисовке SwiftUI гонял диффинг и мог
@@ -126,6 +135,26 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
             DispatchQueue.main.async {
                 self.tableContentHeight = cv.collectionViewLayout.collectionViewContentSize.height
             }
+        }
+    }
+
+    /// Меняет отступ, не сбивая позицию: если лента стояла у последнего сообщения,
+    /// она там и остаётся (панель выросла — сообщения поднимаются вместе с ней).
+    private func applyBottomInset(to cv: UICollectionView) {
+        let flipped = type == .conversation
+        let current = flipped ? cv.contentInset.top : cv.contentInset.bottom
+        guard abs(current - bottomContentInset) > 0.5 else { return }
+
+        if flipped {
+            let wasAtBottom = cv.contentOffset.y <= -current + 1
+            cv.contentInset.top = bottomContentInset
+            cv.verticalScrollIndicatorInsets.top = bottomContentInset
+            if wasAtBottom {
+                cv.contentOffset.y = -bottomContentInset
+            }
+        } else {
+            cv.contentInset.bottom = bottomContentInset
+            cv.verticalScrollIndicatorInsets.bottom = bottomContentInset
         }
     }
 
@@ -177,6 +206,8 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
         var lastSections: [MessagesSection] = []
         private var paginationTargetItemID: ItemID?
         private var hasPerformedInitialScroll = false
+
+        var reactionTap: ((Message, String) -> Void)?
 
         private var invertT: CGAffineTransform {
             outer.type == .conversation ? CGAffineTransform(scaleX: 1, y: -1) : .identity
@@ -235,7 +266,9 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
                 // Плеер отдаём ВНУТРИ замыкания: содержимое
                 // `UIHostingConfiguration` — новый корень SwiftUI-дерева, и
                 // окружение списка оно не наследует.
-                let hostedView = messageView.sharedVoicePlayer(self.voicePlayer)
+                let hostedView = messageView
+                    .sharedVoicePlayer(self.voicePlayer)
+                    .environment(\.messageReactionTap, self.reactionTap)
 
                 if #available(iOS 16.0, *) {
                     cell.contentConfiguration = UIHostingConfiguration { hostedView }

@@ -171,6 +171,8 @@ final class InputViewModel: ObservableObject {
             reset()
         case .cancelEdit:
             reset()
+        case .cancelReply:
+            attachments.replyMessage = nil
         }
     }
 

@@ -190,17 +190,6 @@ struct MessageView: View {
             }
 
             VStack(alignment: message.user.isCurrentUser ? .trailing : .leading, spacing: 2) {
-                if !isDisplayingMessageMenu, let reply = message.replyMessage?.toMessage() {
-                    replyBubbleView(reply)
-                        .opacity(0.5)
-                        .padding(message.user.isCurrentUser ? .trailing : .leading, 10)
-                        .overlay(alignment: message.user.isCurrentUser ? .trailing : .leading) {
-                            Capsule()
-                                .foregroundColor(theme.colors.buttonBackground)
-                                .frame(width: 2)
-                        }
-                }
-                
                 if !message.user.isCurrentUser && (positionInUserGroup == .single || (chatType == .conversation && positionInUserGroup == .first)) && isGroup {
                     Text(message.user.name)
                         .font(.caption)
@@ -239,11 +228,20 @@ struct MessageView: View {
 
     @ViewBuilder
     private func standardBubbleView(_ message: Message) -> some View {
+        // Чипы реакций — под пузырём со стороны отправителя (Telegram), без нахлёста.
         VStack(
-            alignment: message.user.isCurrentUser ? .leading : .trailing,
-            spacing: -bubbleSize.height / 3
+            alignment: message.user.isCurrentUser ? .trailing : .leading,
+            spacing: 0
         ) {
             VStack(alignment: .leading, spacing: 0) {
+                // Цитата ответа — ВНУТРИ пузыря, сверху (Telegram), а не отдельной
+                // полупрозрачной копией над ним.
+                if let reply = message.replyMessage {
+                    ReplyQuoteView(reply: reply, isOutgoing: message.user.isCurrentUser)
+                        .padding(.horizontal, 6)
+                        .padding(.top, 6)
+                }
+
                 if !message.attachments.isEmpty {
                     attachmentsView(message)
                 }
@@ -278,7 +276,14 @@ struct MessageView: View {
                     // становился выше на целую строку, а галочка висела под
                     // волной сама по себе и читалась как чужеродный элемент.
                     recordingView(recording)
-                        .padding(.bottom, 10)
+                        .padding(.bottom, showsInlineReactions(message) ? 40 : 10)
+                        .overlay(alignment: .bottomLeading) {
+                            if showsInlineReactions(message) {
+                                ReactionChipsRow(message: message, isOutgoingBubble: message.user.isCurrentUser)
+                                    .padding(.leading, MessageView.horizontalTextPadding)
+                                    .padding(.bottom, 6)
+                            }
+                        }
                         .overlay(alignment: .bottomTrailing) {
                             // Отступы больше, чем у текстового пузыря: там статус
                             // стоит в потоке за текстом, а здесь висит в углу, где
@@ -319,8 +324,12 @@ struct MessageView: View {
             .bubbleBackground(message, theme: theme)
             .zIndex(0)
             
-            if !isDisplayingMessageMenu && !message.reactions.isEmpty && !message.isDeleted {
-                reactionsView(message)
+            if !isDisplayingMessageMenu && !message.reactions.isEmpty && !message.isDeleted && message.publicationAttachment?.showsQuoteCard == true {
+                // Карточка-цитата публикации — своя композиция без «строки времени»;
+                // здесь чипы остаются под ней. В обычном пузыре они внутри (см. `textWithTimeView`).
+                ReactionChipsRow(message: message, isOutgoingBubble: false)
+                    .padding(.top, 4)
+                    .padding(.horizontal, 4)
                     .zIndex(1)
             }
         }
@@ -376,7 +385,7 @@ struct MessageView: View {
         _ publication: MessagePublicationAttachment
     ) -> some View {
         VStack(
-            alignment: message.user.isCurrentUser ? .leading : .trailing,
+            alignment: message.user.isCurrentUser ? .trailing : .leading,
             spacing: 0
         ) {
             ZStack(alignment: .bottomLeading) {
@@ -424,8 +433,12 @@ struct MessageView: View {
             }
             .zIndex(0)
 
-            if !isDisplayingMessageMenu && !message.reactions.isEmpty && !message.isDeleted {
-                reactionsView(message)
+            if !isDisplayingMessageMenu && !message.reactions.isEmpty && !message.isDeleted && message.publicationAttachment?.showsQuoteCard == true {
+                // Карточка-цитата публикации — своя композиция без «строки времени»;
+                // здесь чипы остаются под ней. В обычном пузыре они внутри (см. `textWithTimeView`).
+                ReactionChipsRow(message: message, isOutgoingBubble: false)
+                    .padding(.top, 4)
+                    .padding(.horizontal, 4)
                     .zIndex(1)
             }
         }
@@ -771,8 +784,51 @@ struct MessageView: View {
         .contentShape(Rectangle())
     }
 
+    /// Чипы реакций внутри пузыря (Telegram): не в меню-копии и не у удалённых.
+    private func showsInlineReactions(_ message: Message) -> Bool {
+        !message.reactions.isEmpty && !message.isDeleted
+    }
+
     @ViewBuilder
     func textWithTimeView(_ message: Message) -> some View {
+        if showsInlineReactions(message) {
+            // Telegram: текст, под ним одна строка — чипы слева, время справа.
+            VStack(alignment: .leading, spacing: 6) {
+                messageTextView(message)
+                HStack(alignment: .bottom, spacing: 12) {
+                    ReactionChipsRow(message: message, isOutgoingBubble: message.user.isCurrentUser)
+                    Spacer(minLength: 0)
+                    messageTimeView()
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+            .padding(.bottom, 6)
+        } else {
+            plainTextWithTimeView(message)
+        }
+    }
+
+    private func messageTextView(_ message: Message) -> some View {
+        MessageTextView(
+            text: message.text,
+            messageUseMarkdown: messageUseMarkdown,
+            inbound: !message.user.isCurrentUser,
+            anyLinkColor: theme.colors.anyLink,
+            darkLinkColor: theme.colors.darkLink,
+            isDeleted: message.isDeleted,
+            isStreaming: message.isStreaming,
+            onMentionTap: { id in
+                if let user = groupUsers.first(where: { $0.id.components(separatedBy: "@").first == id }) {
+                    tapAvatarClosure?(user, message.id)
+                }
+            }
+        )
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private func plainTextWithTimeView(_ message: Message) -> some View {
         HStack(alignment: .lastTextBaseline, spacing: 12) {
             MessageTextView(
                 text: message.text,
@@ -1106,3 +1162,58 @@ private extension View {
     }
 }
 
+
+// MARK: - Telegram-style reply quote
+
+/// Цитата внутри пузыря: акцентная полоска, автор, одна строка текста.
+/// Тап — прокрутка к исходному сообщению (`.onScrollToMessage`, тот же механизм,
+/// что у программного `ChatView.scrollToMessage`).
+struct ReplyQuoteView: View {
+    @Environment(\.chatTheme) private var theme
+
+    let reply: ReplyMessage
+    let isOutgoing: Bool
+
+    /// На исходящем пузыре (заливка цветом бренда) акцент белый, на входящем — цвет бренда.
+    private var accent: Color { isOutgoing ? .white : theme.colors.myMessage }
+
+    private var preview: String {
+        if !reply.text.isEmpty { return reply.text }
+        return reply.recording != nil ? "🎤" : ""
+    }
+
+    var body: some View {
+        Button {
+            NotificationCenter.default.post(name: .onScrollToMessage, object: reply.id)
+        } label: {
+            HStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(accent)
+                    .frame(width: 3)
+                VStack(alignment: .leading, spacing: 1) {
+                    if !reply.user.name.isEmpty {
+                        Text(reply.user.name)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(accent)
+                            .lineLimit(1)
+                    }
+                    Text(preview)
+                        .font(.system(size: 13))
+                        .foregroundColor(isOutgoing ? Color.white.opacity(0.85) : Color.primary.opacity(0.8))
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 5)
+            .padding(.trailing, 8)
+            .fixedSize(horizontal: false, vertical: true)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(accent.opacity(isOutgoing ? 0.18 : 0.12))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+    }
+}
