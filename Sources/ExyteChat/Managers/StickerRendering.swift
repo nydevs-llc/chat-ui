@@ -11,13 +11,33 @@
 
 import SwiftUI
 
+/// Где в ленте рисуется анимация — чтобы приложение могло помнить, что она уже
+/// проигрывалась в этой сессии чата, и не повторять её при переиспользовании
+/// ячейки или смене статуса «доставлено/прочитано» (Telegram: `alreadyPlayedStickers`).
+public struct StickerPlaybackContext: Hashable, Sendable {
+    /// `Message.id` — у черновика и доставленного сообщения он один и тот же (guid).
+    public let messageId: String
+    /// Номер эмодзи в «большом» сообщении (0…2); у стикера всегда 0.
+    public let index: Int
+    /// Растёт на каждом тапе — анимация обязана проиграться заново.
+    public let replayToken: Int
+
+    public init(messageId: String, index: Int = 0, replayToken: Int = 0) {
+        self.messageId = messageId
+        self.index = index
+        self.replayToken = replayToken
+    }
+
+    /// Ключ «уже проигрывалось» без учёта тапов.
+    public var playKey: String { "\(messageId)#\(index)" }
+}
+
 public struct ChatStickerRendering {
-    /// Содержимое стикера (анимация / картинка) в заданном размере. `replayToken`
-    /// растёт на каждом тапе — анимация обязана проиграться заново.
-    public var stickerContent: (MessageSticker, CGSize, Int) -> AnyView
+    /// Содержимое стикера (анимация / картинка) в заданном размере.
+    public var stickerContent: (MessageSticker, CGSize, StickerPlaybackContext) -> AnyView
     /// Анимированный большой эмодзи. `nil` — анимации для эмодзи нет, форк рисует
     /// статичный глиф того же размера.
-    public var animatedEmojiContent: (String, CGFloat, Int) -> AnyView?
+    public var animatedEmojiContent: (String, CGFloat, StickerPlaybackContext) -> AnyView?
     /// Тап по стикеру в ленте (приложение открывает шторку пака).
     public var onStickerTap: (Message) -> Void
     /// Тап по большому эмодзи (повтор анимации, хаптик и аналитика — у приложения).
@@ -26,8 +46,8 @@ public struct ChatStickerRendering {
     public var bigEmojiEnabled: Bool
 
     public init(
-        stickerContent: @escaping (MessageSticker, CGSize, Int) -> AnyView,
-        animatedEmojiContent: @escaping (String, CGFloat, Int) -> AnyView? = { _, _, _ in nil },
+        stickerContent: @escaping (MessageSticker, CGSize, StickerPlaybackContext) -> AnyView,
+        animatedEmojiContent: @escaping (String, CGFloat, StickerPlaybackContext) -> AnyView? = { _, _, _ in nil },
         onStickerTap: @escaping (Message) -> Void = { _ in },
         onBigEmojiTap: @escaping (Message, String) -> Void = { _, _ in },
         bigEmojiEnabled: Bool = true
