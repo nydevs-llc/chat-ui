@@ -2,9 +2,9 @@
 //  MessageVideoNoteView.swift
 //  Chat
 //
-//  Кружок в ленте: без пузыря, капсула времени со статусом сбоку внизу
-//  (у исходящего — слева, у входящего — справа), реакции под кругом,
-//  цитата ответа над ним (прячется, пока кружок увеличен).
+//  Кружок в ленте: без пузыря, капсула времени со статусом в правом нижнем
+//  углу описанного квадрата (у входящих и у исходящих, как в Telegram),
+//  реакции под кругом, цитата ответа над ним (прячется, пока кружок увеличен).
 //
 
 import SwiftUI
@@ -35,11 +35,10 @@ struct MessageVideoNoteView: View {
                 NoBubbleReplyQuote(reply: reply, isOutgoing: isOutgoing)
             }
 
-            HStack(alignment: .bottom, spacing: 4) {
-                if isOutgoing, showsTime, !note.isEnlarged { timeCapsule }
-                circle
-                if !isOutgoing, showsTime, !note.isEnlarged { timeCapsule }
-            }
+            circle
+                .overlay(alignment: .bottomLeading) {
+                    if showsTime { timeCapsule }
+                }
 
             if note.isRemoved, let caption = rendering?.removedCaption(isOutgoing), !caption.isEmpty {
                 Text(caption)
@@ -68,7 +67,8 @@ struct MessageVideoNoteView: View {
             }
         }
         .frame(width: diameter, height: diameter)
-        .clipShape(Circle())
+        // Кругом режет само приложение (только видео/постер): кольцо, ручка сека
+        // и капсула длительности лежат поверх и не обрезаются.
         .contentShape(Circle())
         // Увеличение до min(404, ширина − 20) — пружиной за 0.3 с; при
         // «Уменьшении движения» — плавная смена без пружины (§8.3, §17).
@@ -87,16 +87,27 @@ struct MessageVideoNoteView: View {
                 Text(MessageVideoNote.formatDuration(seconds: note.durationMs / 1000))
                     .font(.system(size: 11).monospacedDigit())
                     .foregroundColor(.white)
-                    .padding(.horizontal, 6)
+                    .padding(.horizontal, 5)
                     .frame(height: 18)
                     .background(Capsule().fill(Color.black.opacity(0.3)))
-                    .padding(.leading, diameter / 2 - 56)
-                    .padding(.bottom, 18)
+                    .fixedSize()
+                    // Правый край на mid − 55, низ = низ кружка (вне диска).
+                    .frame(width: max(0, diameter / 2 - 55), alignment: .trailing)
             }
     }
 
+    /// Капсула времени со статусом: левый край на mid + 55 (+25 у увеличенного),
+    /// низ = низ кружка; у исходящего, прижатого вправо, не выходит за край
+    /// квадрата больше чем на 4 (Telegram клипует к ширине ленты − 4).
     private var timeCapsule: some View {
-        NoBubbleTimeCapsule(message: message, onRetry: onRetry)
+        let leadingEdge = diameter / 2 + 55 + (note.isEnlarged ? 25 : 0)
+        // Полоса [0, limit]: капсула стоит на leadingEdge, а если не влезает до
+        // limit — прижимается к нему правым краем (min(leadingEdge, limit − w)).
+        let limit = isOutgoing ? diameter + 4 : leadingEdge + 200
+        return NoBubbleTimeCapsule(message: message, onRetry: onRetry)
+            .fixedSize()
+            .frame(minWidth: limit - leadingEdge, alignment: .leading)
+            .frame(width: limit, alignment: .trailing)
     }
 }
 
