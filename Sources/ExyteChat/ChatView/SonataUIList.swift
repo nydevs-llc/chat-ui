@@ -244,8 +244,14 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
                 object: nil,
                 queue: .main
             ) { [weak self] notification in
-                guard let recording = notification.object as? Recording else { return }
-                self?.voicePlayer.startPlaying(recording)
+                guard let self, let recording = notification.object as? Recording else { return }
+                // Живых лент может быть несколько (чат поверх чата, стек навигации):
+                // играет только та, где есть это сообщение.
+                if let messageId = notification.userInfo?["messageId"] as? String,
+                   !self.lastSections.contains(where: { $0.rows.contains { $0.message.id == messageId } }) {
+                    return
+                }
+                self.voicePlayer.startPlaying(recording)
             }
         }
 

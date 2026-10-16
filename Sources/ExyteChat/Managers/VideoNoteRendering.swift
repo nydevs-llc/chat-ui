@@ -59,7 +59,8 @@ public extension Notification.Name {
     /// Голосовое доиграло до конца. `userInfo["url"]` — локальный файл записи.
     static let chatVoicePlaybackFinished = Notification.Name("chatVoicePlaybackFinished")
     /// Просьба приложения сыграть голосовое общим плеером ленты
-    /// (последовательное воспроизведение). `object` — `Recording`.
+    /// (последовательное воспроизведение). `object` — `Recording`,
+    /// `userInfo["messageId"]` — id сообщения: отвечает только лента, где оно есть.
     static let chatVoicePlayRequest = Notification.Name("chatVoicePlayRequest")
     /// Приложение начало воспроизведение со звуком (кружок): все плееры голосовых
     /// встают на паузу.
