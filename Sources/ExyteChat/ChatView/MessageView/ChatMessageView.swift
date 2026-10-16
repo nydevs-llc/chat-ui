@@ -11,7 +11,8 @@ struct ChatMessageView<MessageContent: View>: View {
     
     typealias MessageBuilderClosure = ChatView<MessageContent, EmptyView, DefaultMessageMenuAction>.MessageBuilderClosure
     
-    @ObservedObject var viewModel: ChatViewModel
+    /// Не `@ObservedObject`: ячейка лишь вызывает действия модели (см. `MessageView`).
+    let viewModel: ChatViewModel
     
     @Environment(\.chatTheme) private var theme
     

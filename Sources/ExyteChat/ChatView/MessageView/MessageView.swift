@@ -14,7 +14,15 @@ struct MessageView: View {
     @Environment(\.chatStickerRendering) private var stickerRendering
     @Environment(\.chatVideoNoteRendering) private var videoNoteRendering
 
-    @ObservedObject var viewModel: ChatViewModel
+    /// Не `@ObservedObject`: ячейка только вызывает действия и пишет
+    /// `messageFrame`, а не читает опубликованное состояние. Наблюдение
+    /// перерисовывало ВСЕ видимые ячейки на каждую запись `messageFrame` во
+    /// время анимации меню (замер: ~80 пересчётов body на одно открытие).
+    let viewModel: ChatViewModel
+
+    private var messageFrameBinding: Binding<CGRect> {
+        Binding(get: { [viewModel] in viewModel.messageFrame }, set: { [viewModel] in viewModel.messageFrame = $0 })
+    }
 
     let message: Message
     let positionInUserGroup: PositionInUserGroup
@@ -237,7 +245,7 @@ struct MessageView: View {
                 onRetry: retryClosure(message)
             )
             .applyIf(isDisplayingMessageMenu) {
-                $0.frameGetter($viewModel.messageFrame)
+                $0.frameGetter(messageFrameBinding)
             }
         } else if let sticker = message.sticker, !message.isDeleted {
             // Стикер — без пузыря (Telegram).
@@ -249,7 +257,7 @@ struct MessageView: View {
                 onRetry: retryClosure(message)
             )
             .applyIf(isDisplayingMessageMenu) {
-                $0.frameGetter($viewModel.messageFrame)
+                $0.frameGetter(messageFrameBinding)
             }
         } else if let emojis = MessageView.bigEmojis(of: message, rendering: stickerRendering) {
             BigEmojiMessageView(
@@ -260,7 +268,7 @@ struct MessageView: View {
                 onRetry: retryClosure(message)
             )
             .applyIf(isDisplayingMessageMenu) {
-                $0.frameGetter($viewModel.messageFrame)
+                $0.frameGetter(messageFrameBinding)
             }
         } else if let publication = message.publicationAttachment, publication.showsQuoteCard {
             publicationQuoteComposition(message, publication)
@@ -377,7 +385,7 @@ struct MessageView: View {
             }
         }
         .applyIf(isDisplayingMessageMenu) {
-            $0.frameGetter($viewModel.messageFrame)
+            $0.frameGetter(messageFrameBinding)
         }
     }
 
@@ -512,7 +520,7 @@ struct MessageView: View {
                 : 0
         )
         .applyIf(isDisplayingMessageMenu) {
-            $0.frameGetter($viewModel.messageFrame)
+            $0.frameGetter(messageFrameBinding)
         }
     }
 
