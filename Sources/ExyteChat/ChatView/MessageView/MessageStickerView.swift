@@ -110,7 +110,7 @@ struct MessageStickerView: View {
     @ViewBuilder
     private func content(size: CGSize) -> some View {
         if let rendering {
-            rendering.stickerContent(sticker, size, replayToken)
+            rendering.stickerContent(sticker, size, StickerPlaybackContext(messageId: message.id, replayToken: replayToken))
         } else if let url = sticker.thumbnailURL ?? (sticker.isAnimated ? nil : sticker.fileURL) {
             LazyImage(url: url) { state in
                 if let image = state.image {
@@ -146,7 +146,11 @@ struct BigEmojiMessageView: View {
 
             HStack(spacing: 0) {
                 ForEach(Array(emojis.enumerated()), id: \.offset) { index, emoji in
-                    glyph(emoji, side: side, token: replayTokens[index] ?? 0)
+                    glyph(emoji, side: side, context: StickerPlaybackContext(
+                        messageId: message.id,
+                        index: index,
+                        replayToken: replayTokens[index] ?? 0
+                    ))
                         .frame(width: side, height: side)
                         .contentShape(Rectangle())
                         .onTapGesture {
@@ -172,8 +176,8 @@ struct BigEmojiMessageView: View {
     }
 
     @ViewBuilder
-    private func glyph(_ emoji: String, side: CGFloat, token: Int) -> some View {
-        if let animated = rendering?.animatedEmojiContent(emoji, side, token) {
+    private func glyph(_ emoji: String, side: CGFloat, context: StickerPlaybackContext) -> some View {
+        if let animated = rendering?.animatedEmojiContent(emoji, side, context) {
             animated
         } else {
             // Глиф системного шрифта визуально меньше своего кегля — 0.8 стороны
