@@ -12,6 +12,7 @@ import SwiftUI
 struct MessageVideoNoteView: View {
     @Environment(\.chatVideoNoteRendering) private var rendering
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let message: Message
     let note: MessageVideoNote
@@ -69,6 +70,12 @@ struct MessageVideoNoteView: View {
         .frame(width: diameter, height: diameter)
         .clipShape(Circle())
         .contentShape(Circle())
+        // Увеличение до min(404, ширина − 20) — пружиной за 0.3 с; при
+        // «Уменьшении движения» — плавная смена без пружины (§8.3, §17).
+        .animation(
+            reduceMotion ? .easeInOut(duration: 0.3) : .spring(response: 0.3, dampingFraction: 0.8),
+            value: note.isEnlarged
+        )
         // В копии под меню — только картинка: тап закрывает меню, а не играет.
         .allowsHitTesting(!isDisplayingMessageMenu)
     }
