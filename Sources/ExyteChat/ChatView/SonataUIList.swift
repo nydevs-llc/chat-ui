@@ -638,6 +638,12 @@ private enum UIListLayout {
 
     final class HeaderView: UICollectionReusableView {
         static let reuseID = "HeaderHost"
+
+        /// Как у `SonataMessageCell`: заголовок даты не берёт вертикальный safe area,
+        /// иначе его `UIHostingController` растёт на нижний инсет у края ленты.
+        override var safeAreaInsets: UIEdgeInsets {
+            super.safeAreaInsets.withoutVerticalInsets
+        }
         private var hosting: UIHostingController<AnyView>?
 
         override func prepareForReuse() {
@@ -675,20 +681,30 @@ private enum UIListLayout {
     }
 }
 
-/// Ячейка сообщения: высота самоподгонки округляется до целого поинта.
+/// Ячейка сообщения без вертикального safe area.
 ///
-/// SwiftUI-содержимое (`UIHostingConfiguration`) на дробных позициях иногда
-/// отдаёт высоту «предложенная ± 1 пиксель»: каждый проход лейаута двигал
-/// ячейку на 1/3 pt, UIKit ловил бесконечный цикл самоподгонки и падал
-/// (`_UICollectionViewFeedbackLoopDebugger`: «stuck in a recursive layout loop»,
-/// строка 52 → 53 → … pt). Округление до ближайшего целого гасит дрейф меньше
-/// 0.5 pt, а на глаз разницы нет.
+/// Содержимое ячейки — SwiftUI (`UIHostingConfiguration`), и её `contentView`
+/// раскладывает его внутри safe area, прибавляя инсеты к высоте самоподгонки.
+/// Лента тянется под плавающую панель ввода до самого низа экрана, поэтому у неё
+/// есть нижний safe area (34 pt на iPhone с домашним индикатором). У перевёрнутой
+/// ленты (`transform` y = −1) этот «низ» визуально наверху: строка у края получала
+/// `safeAreaInsets.bottom` от 0 до 34 в зависимости от своей позиции, вырастала
+/// на столько же, сдвигалась, инсет менялся — и так по кругу. Замер: все
+/// 306 изменений высоты за прогон равны изменению инсета; лента качалась на 34 pt,
+/// блокировала главный поток на 140–317 мс и (без округления высоты) падала в
+/// `_UICollectionViewFeedbackLoopDebugger` («stuck in a recursive layout loop»).
+///
+/// Отступы от краёв экрана задаёт сама лента (`contentInset` под панель ввода),
+/// а не ячейка, поэтому вертикальный safe area ячейке не нужен вовсе.
+/// Горизонтальный оставлен: в альбомной ориентации пузыри не уходят под вырез.
 final class SonataMessageCell: UICollectionViewCell {
-    override func preferredLayoutAttributesFitting(
-        _ layoutAttributes: UICollectionViewLayoutAttributes
-    ) -> UICollectionViewLayoutAttributes {
-        let attributes = super.preferredLayoutAttributesFitting(layoutAttributes)
-        attributes.size.height = attributes.size.height.rounded()
-        return attributes
+    override var safeAreaInsets: UIEdgeInsets {
+        super.safeAreaInsets.withoutVerticalInsets
+    }
+}
+
+private extension UIEdgeInsets {
+    var withoutVerticalInsets: UIEdgeInsets {
+        UIEdgeInsets(top: 0, left: left, bottom: 0, right: right)
     }
 }
