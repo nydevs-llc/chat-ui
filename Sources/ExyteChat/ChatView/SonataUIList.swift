@@ -86,7 +86,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
             cv.transform = CGAffineTransform(scaleX: 1, y: -1)
         }
 
-        cv.register(UICollectionViewCell.self, forCellWithReuseIdentifier: "cell")
+        cv.register(SonataMessageCell.self, forCellWithReuseIdentifier: "cell")
 
         cv.register(UIListLayout.HeaderView.self,
                     forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
@@ -662,5 +662,23 @@ private enum UIListLayout {
                 layoutIfNeeded()
             }
         }
+    }
+}
+
+/// Ячейка сообщения: высота самоподгонки округляется до целого поинта.
+///
+/// SwiftUI-содержимое (`UIHostingConfiguration`) на дробных позициях иногда
+/// отдаёт высоту «предложенная ± 1 пиксель»: каждый проход лейаута двигал
+/// ячейку на 1/3 pt, UIKit ловил бесконечный цикл самоподгонки и падал
+/// (`_UICollectionViewFeedbackLoopDebugger`: «stuck in a recursive layout loop»,
+/// строка 52 → 53 → … pt). Округление до ближайшего целого гасит дрейф меньше
+/// 0.5 pt, а на глаз разницы нет.
+final class SonataMessageCell: UICollectionViewCell {
+    override func preferredLayoutAttributesFitting(
+        _ layoutAttributes: UICollectionViewLayoutAttributes
+    ) -> UICollectionViewLayoutAttributes {
+        let attributes = super.preferredLayoutAttributesFitting(layoutAttributes)
+        attributes.size.height = attributes.size.height.rounded()
+        return attributes
     }
 }
