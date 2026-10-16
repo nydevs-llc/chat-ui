@@ -73,6 +73,9 @@ public struct Message: Identifiable, Hashable {
     public var voicePlayback: MessageVoicePlayback?
     /// Стикер: сообщение рисуется без пузыря (`MessageView.stickerComposition`).
     public var sticker: MessageSticker?
+    /// Подвал под сообщением (рисует приложение через `ChatView.messageFooter`).
+    /// `nil` — подвала нет.
+    public var footer: MessageFooter?
     public var triggerRedraw: UUID?
     public var isStreaming: Bool
 
@@ -93,7 +96,8 @@ public struct Message: Identifiable, Hashable {
                 publicationAttachment: MessagePublicationAttachment? = nil,
                 voicePlayback: MessageVoicePlayback? = nil,
                 sticker: MessageSticker? = nil,
-                isStreaming: Bool = false) {
+                isStreaming: Bool = false,
+                footer: MessageFooter? = nil) {
 
         self.id = id
         self.user = user
@@ -111,6 +115,7 @@ public struct Message: Identifiable, Hashable {
         self.voicePlayback = voicePlayback
         self.sticker = sticker
         self.isStreaming = isStreaming
+        self.footer = footer
     }
 
     public static func makeMessage(
@@ -158,7 +163,8 @@ extension Message: Equatable {
         lhs.isStreaming == rhs.isStreaming &&
         lhs.triggerRedraw == rhs.triggerRedraw &&
         lhs.publicationAttachment == rhs.publicationAttachment &&
-        lhs.sticker == rhs.sticker
+        lhs.sticker == rhs.sticker &&
+        lhs.footer == rhs.footer
     }
 
     // `hash` задан явно и зеркалит `==`. Синтезированный вариант брал ВСЕ хранимые
@@ -179,6 +185,7 @@ extension Message: Equatable {
         hasher.combine(triggerRedraw)
         hasher.combine(publicationAttachment)
         hasher.combine(sticker)
+        hasher.combine(footer)
     }
 }
 

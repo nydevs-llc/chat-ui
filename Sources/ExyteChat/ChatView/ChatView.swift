@@ -91,6 +91,8 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
     var reactions: MessageReactionsConfiguration?
     /// Стикеры и большие эмодзи (рендер содержимого и тапы — у приложения).
     var stickerRendering: ChatStickerRendering?
+    /// Подвал под сообщением (`Message.footer`); `nil` — подвалы не рисуются.
+    var messageFooterBuilder: MessageFooterBuilder?
 
     /// Совместимость с API exyte: делегат заворачивается в `MessageReactionsConfiguration`.
     /// Только запись — хранится конфигурация, а не делегат.
@@ -470,7 +472,8 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
                     config.onEvent(message, .resolve(emoji, on: message, source: .chip))
                 }
             },
-            stickerRendering: stickerRendering
+            stickerRendering: stickerRendering,
+            messageFooterBuilder: messageFooterBuilder
 //            listSwipeActions: listSwipeActions
         )
         .applyIf(!isScrollEnabled) {
@@ -576,6 +579,7 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
                 tapDocumentClosure: tapDocumentClosure,
                 groupUsers: groupUsers)
             .environment(\.chatStickerRendering, stickerRendering)
+            .environment(\.chatMessageFooterBuilder, messageFooterBuilder)
             .onTapGesture {
                 hideMessageMenu()
             }
@@ -806,6 +810,16 @@ public extension ChatView {
     func stickerRendering(_ configuration: ChatStickerRendering?) -> ChatView {
         var view = self
         view.stickerRendering = configuration
+        return view
+    }
+
+    /// Подвал под сообщением: строка, которую приложение рисует под пузырём
+    /// сообщения с непустым `Message.footer` (со стороны отправителя). Какие
+    /// сообщения несут подвал — решает приложение, проставляя `footer`; форк
+    /// отвечает только за место в раскладке и за перерисовку при смене ключа.
+    func messageFooter<V: View>(_ builder: @escaping (Message, MessageFooter) -> V) -> ChatView {
+        var view = self
+        view.messageFooterBuilder = { message, footer in AnyView(builder(message, footer)) }
         return view
     }
 

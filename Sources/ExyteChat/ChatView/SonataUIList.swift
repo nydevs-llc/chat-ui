@@ -63,6 +63,8 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
     var reactionTap: ((Message, String) -> Void)?
     /// Рендер стикеров/больших эмодзи; кладётся в окружение каждой ячейки.
     var stickerRendering: ChatStickerRendering?
+    /// Подвал под сообщением; кладётся в окружение каждой ячейки.
+    var messageFooterBuilder: MessageFooterBuilder?
 
     func makeUIView(context: Context) -> UICollectionView {
         let layout = UIListLayout.makeLayout(
@@ -124,6 +126,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
         // кладём отдельно, иначе ячейки звали бы замыкание из первого рендера.
         context.coordinator.reactionTap = reactionTap
         context.coordinator.stickerRendering = stickerRendering
+        context.coordinator.messageFooterBuilder = messageFooterBuilder
         // Данные не изменились — списку нечего делать.
         //
         // `apply(sections:)` на каждой перерисовке SwiftUI гонял диффинг и мог
@@ -212,6 +215,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
 
         var reactionTap: ((Message, String) -> Void)?
         var stickerRendering: ChatStickerRendering?
+        var messageFooterBuilder: MessageFooterBuilder?
 
         private var invertT: CGAffineTransform {
             outer.type == .conversation ? CGAffineTransform(scaleX: 1, y: -1) : .identity
@@ -274,6 +278,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
                     .sharedVoicePlayer(self.voicePlayer)
                     .environment(\.messageReactionTap, self.reactionTap)
                     .environment(\.chatStickerRendering, self.stickerRendering)
+                    .environment(\.chatMessageFooterBuilder, self.messageFooterBuilder)
 
                 if #available(iOS 16.0, *) {
                     cell.contentConfiguration = UIHostingConfiguration { hostedView }
