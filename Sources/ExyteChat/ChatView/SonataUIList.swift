@@ -98,15 +98,22 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
         cv.delegate = context.coordinator
         context.coordinator.attach(to: cv)
 
-        NotificationCenter.default.addObserver(forName: .onScrollToBottom, object: nil, queue: .main) { _ in
-            context.coordinator.scrollToBottom(animated: true)
-        }
-
-        NotificationCenter.default.addObserver(forName: .onScrollToMessage, object: nil, queue: .main) { notification in
-            if let messageId = notification.object as? String {
-                context.coordinator.scrollToMessage(messageId: messageId, animated: true)
+        // Токены держит координатор и снимает в `deinit`: замыкание с сильным
+        // `context` раньше навсегда оставляло в памяти координатор ленты (и с ним
+        // `ChatViewModel`, плеер голосовых и все сообщения) после каждого закрытия чата.
+        let coordinator = context.coordinator
+        coordinator.notificationTokens.append(
+            NotificationCenter.default.addObserver(forName: .onScrollToBottom, object: nil, queue: .main) { [weak coordinator] _ in
+                coordinator?.scrollToBottom(animated: true)
             }
-        }
+        )
+        coordinator.notificationTokens.append(
+            NotificationCenter.default.addObserver(forName: .onScrollToMessage, object: nil, queue: .main) { [weak coordinator] notification in
+                if let messageId = notification.object as? String {
+                    coordinator?.scrollToMessage(messageId: messageId, animated: true)
+                }
+            }
+        )
 
         DispatchQueue.main.async {
             shouldScrollToTop = { [weak cv] in
@@ -217,6 +224,8 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
         var stickerRendering: ChatStickerRendering?
         var videoNoteRendering: ChatVideoNoteRendering?
         private var voicePlayRequestToken: NSObjectProtocol?
+        /// Подписки `makeUIView` (`.onScrollToBottom`, `.onScrollToMessage`).
+        var notificationTokens: [NSObjectProtocol] = []
 
         private var invertT: CGAffineTransform {
             outer.type == .conversation ? CGAffineTransform(scaleX: 1, y: -1) : .identity
@@ -259,6 +268,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
             if let voicePlayRequestToken {
                 NotificationCenter.default.removeObserver(voicePlayRequestToken)
             }
+            notificationTokens.forEach { NotificationCenter.default.removeObserver($0) }
         }
 
         func attach(to cv: UICollectionView) {

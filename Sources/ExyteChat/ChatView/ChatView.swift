@@ -506,6 +506,12 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
             viewModel.inputViewModel = inputViewModel
             viewModel.globalFocusState = globalFocusState
 
+            // Без захвата `self`: копия `ChatView` держит `@StateObject`-хранилище
+            // самого `inputViewModel` — цикл InputViewModel → замыкание → ChatView →
+            // InputViewModel оставлял в памяти всю ленту (ChatViewModel, секции,
+            // сообщения) после каждого закрытия чата.
+            let didSendMessage = didSendMessage
+            let type = type
             inputViewModel.didSendMessage = { value in
                 Task { @MainActor in
                     didSendMessage(value)
