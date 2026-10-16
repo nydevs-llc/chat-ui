@@ -85,6 +85,12 @@ struct MessageRow: Equatable {
         // снимком `url == nil`, отложенный старт не срабатывает — и кнопка play
         // выглядит мёртвой, хотя файл давно скачан и лежит в словаре.
         && lhs.message.recording == rhs.message.recording
+        // Кружок: увеличение при звуке (`isEnlarged`), точка «не просмотрено»
+        // и модерация живут в `videoNote`. Без этой строки ячейка не
+        // реконфигурировалась — кружок не увеличивался по тапу, а точка не
+        // гасла, пока ячейку не передёрнут скроллом. Стикер — по той же причине.
+        && lhs.message.videoNote == rhs.message.videoNote
+        && lhs.message.sticker == rhs.message.sticker
     }
 }
 
