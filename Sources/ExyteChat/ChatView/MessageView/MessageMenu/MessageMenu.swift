@@ -698,14 +698,16 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
             let type = action.type()
             switch type {
             case .edit:
-                return message.type == .text && message.user.isCurrentUser && message.publicationAttachment == nil && message.sticker == nil
+                return message.type == .text && message.user.isCurrentUser && message.publicationAttachment == nil && message.sticker == nil && message.videoNote == nil
             case .delete:
                 return message.user.isCurrentUser && message.isDeliverableStatus
             case .reply, .forward:
+                // Удалённый модерацией чужой кружок: в меню только «Удалить» (§8.8).
+                if let note = message.videoNote, note.isRemoved, !message.user.isCurrentUser { return false }
                 return true
             case .copy:
                 // Стикер копировать нечего (текста у него нет).
-                return (message.type == .text || message.type == .url) && message.sticker == nil
+                return (message.type == .text || message.type == .url) && message.sticker == nil && message.videoNote == nil
             case .information:
                 return message.user.isCurrentUser &&
                 isGroup &&

@@ -12,6 +12,7 @@ struct MessageView: View {
 
     @Environment(\.chatTheme) private var theme
     @Environment(\.chatStickerRendering) private var stickerRendering
+    @Environment(\.chatVideoNoteRendering) private var videoNoteRendering
 
     @ObservedObject var viewModel: ChatViewModel
 
@@ -168,6 +169,12 @@ struct MessageView: View {
         return .vstack
     }
 
+    /// Увеличенный кружок занимает почти всю ширину (min(404, ширина − 20)):
+    /// боковой резерв под чужую сторону ему не нужен.
+    var isEnlargedVideoNote: Bool {
+        message.videoNote?.isEnlarged == true && !isDisplayingMessageMenu
+    }
+
     var showAvatar: Bool {
         positionInUserGroup == .single
         || (chatType == .conversation && positionInUserGroup == .last)
@@ -203,8 +210,8 @@ struct MessageView: View {
         }
         .padding(.top, topPadding)
         .padding(.bottom, bottomPadding)
-        .padding(.trailing, message.user.isCurrentUser ? MessageView.horizontalNoAvatarPadding : 0)
-        .padding(message.user.isCurrentUser ? .leading : .trailing, MessageView.horizontalBubblePadding)
+        .padding(.trailing, message.user.isCurrentUser ? (isEnlargedVideoNote ? 10 : MessageView.horizontalNoAvatarPadding) : 0)
+        .padding(message.user.isCurrentUser ? .leading : .trailing, isEnlargedVideoNote ? 0 : MessageView.horizontalBubblePadding)
         .frame(maxWidth: UIScreen.main.bounds.width, alignment: message.user.isCurrentUser ? .trailing : .leading)
     }
 
@@ -220,7 +227,19 @@ struct MessageView: View {
     /// без единого изменения.
     @ViewBuilder
     func bubbleView(_ message: Message) -> some View {
-        if let sticker = message.sticker, !message.isDeleted {
+        if let note = MessageView.videoNote(of: message) {
+            // Кружок — без пузыря (Telegram).
+            MessageVideoNoteView(
+                message: message,
+                note: note,
+                isDisplayingMessageMenu: isDisplayingMessageMenu,
+                showsTime: showMessageTimeView,
+                onRetry: retryClosure(message)
+            )
+            .applyIf(isDisplayingMessageMenu) {
+                $0.frameGetter($viewModel.messageFrame)
+            }
+        } else if let sticker = message.sticker, !message.isDeleted {
             // Стикер — без пузыря (Telegram).
             MessageStickerView(
                 message: message,
@@ -378,6 +397,7 @@ struct MessageView: View {
 
     static func hasRenderableContent(_ message: Message) -> Bool {
         message.sticker != nil
+            || message.videoNote != nil
             || !message.attachments.isEmpty
             || message.publicationAttachment != nil
             || message.type == .geo
@@ -1211,9 +1231,12 @@ struct ReplyQuoteView: View {
     /// На исходящем пузыре (заливка цветом бренда) акцент белый, на входящем — цвет бренда.
     private var accent: Color { isOutgoing ? .white : theme.colors.myMessage }
 
+    @Environment(\.chatVideoNoteRendering) private var videoNoteRendering
+
     private var preview: String {
         if !reply.text.isEmpty { return reply.text }
         if let sticker = reply.sticker { return sticker.emoji }
+        if reply.videoNote != nil { return videoNoteRendering?.replyTitle ?? "🎥" }
         return reply.recording != nil ? "🎤" : ""
     }
 
@@ -1225,6 +1248,19 @@ struct ReplyQuoteView: View {
                 RoundedRectangle(cornerRadius: 1.5, style: .continuous)
                     .fill(accent)
                     .frame(width: 3)
+                if let note = reply.videoNote {
+                    // Круглая миниатюра 32×32 + длительность (контракт кружков, §8.1).
+                    Group {
+                        if let thumb = videoNoteRendering?.replyThumbnail(note) {
+                            thumb
+                        } else {
+                            Circle().fill(accent.opacity(0.35))
+                        }
+                    }
+                    .frame(width: 32, height: 32)
+                    .clipShape(Circle())
+                    .padding(.vertical, 2)
+                }
                 VStack(alignment: .leading, spacing: 1) {
                     if !reply.user.name.isEmpty {
                         Text(reply.user.name)
@@ -1232,7 +1268,7 @@ struct ReplyQuoteView: View {
                             .foregroundColor(accent)
                             .lineLimit(1)
                     }
-                    Text(preview)
+                    Text(reply.videoNote.map { "\(preview) \(MessageVideoNote.formatDuration(seconds: $0.durationMs / 1000))" } ?? preview)
                         .font(.system(size: 13))
                         .foregroundColor(isOutgoing ? Color.white.opacity(0.85) : Color.primary.opacity(0.8))
                         .lineLimit(1)

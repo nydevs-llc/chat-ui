@@ -304,6 +304,14 @@ final class RecordingPlayer: ObservableObject {
             self?.progress = 0
         }
         didPlayTillEnd.send()
+        // Последовательное воспроизведение в приложении (голосовое → кружок).
+        if let loadedAssetURL {
+            NotificationCenter.default.post(
+                name: .chatVoicePlaybackFinished,
+                object: self,
+                userInfo: ["url": loadedAssetURL]
+            )
+        }
     }
 
     private func play() {
@@ -343,6 +351,13 @@ final class RecordingPlayer: ObservableObject {
         playing = true
         refreshContext()
         NotificationCenter.default.post(name: .audioPlaybackStarted, object: self)
+        if let loadedAssetURL {
+            NotificationCenter.default.post(
+                name: .chatVoicePlaybackStarted,
+                object: self,
+                userInfo: ["url": loadedAssetURL]
+            )
+        }
     }
 
     /// Единственная точка сборки контекста.
@@ -430,7 +445,18 @@ private extension RecordingPlayer {
             self?.handlePlaybackReachedEnd()
         }
 
-        notificationTokens = [startedToken, recordingStartedToken, recordingStoppedToken, endToken]
+        // Приложение играет кружок со звуком — голосовое замолкает (один
+        // источник звука на ленту, контракт кружков §8.3).
+        let mediaStartedToken = NotificationCenter.default.addObserver(
+            forName: .chatMediaPlaybackStarted,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, self.playing else { return }
+            self.pause()
+        }
+
+        notificationTokens = [startedToken, recordingStartedToken, recordingStoppedToken, endToken, mediaStartedToken]
     }
 
     // Дефект 4 (P10): снимаем блочные подписки по токенам, а не по `self`

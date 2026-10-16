@@ -73,6 +73,8 @@ public struct Message: Identifiable, Hashable {
     public var voicePlayback: MessageVoicePlayback?
     /// Стикер: сообщение рисуется без пузыря (`MessageView.stickerComposition`).
     public var sticker: MessageSticker?
+    /// Кружок: сообщение рисуется без пузыря (`MessageVideoNoteView`).
+    public var videoNote: MessageVideoNote?
     public var triggerRedraw: UUID?
     public var isStreaming: Bool
 
@@ -93,6 +95,7 @@ public struct Message: Identifiable, Hashable {
                 publicationAttachment: MessagePublicationAttachment? = nil,
                 voicePlayback: MessageVoicePlayback? = nil,
                 sticker: MessageSticker? = nil,
+                videoNote: MessageVideoNote? = nil,
                 isStreaming: Bool = false) {
 
         self.id = id
@@ -110,6 +113,7 @@ public struct Message: Identifiable, Hashable {
         self.publicationAttachment = publicationAttachment
         self.voicePlayback = voicePlayback
         self.sticker = sticker
+        self.videoNote = videoNote
         self.isStreaming = isStreaming
     }
 
@@ -158,7 +162,8 @@ extension Message: Equatable {
         lhs.isStreaming == rhs.isStreaming &&
         lhs.triggerRedraw == rhs.triggerRedraw &&
         lhs.publicationAttachment == rhs.publicationAttachment &&
-        lhs.sticker == rhs.sticker
+        lhs.sticker == rhs.sticker &&
+        lhs.videoNote == rhs.videoNote
     }
 
     // `hash` задан явно и зеркалит `==`. Синтезированный вариант брал ВСЕ хранимые
@@ -179,6 +184,7 @@ extension Message: Equatable {
         hasher.combine(triggerRedraw)
         hasher.combine(publicationAttachment)
         hasher.combine(sticker)
+        hasher.combine(videoNote)
     }
 }
 
@@ -282,7 +288,8 @@ public struct ReplyMessage: Codable, Identifiable, Hashable {
         lhs.text == rhs.text &&
         lhs.attachments == rhs.attachments &&
         lhs.recording == rhs.recording &&
-        lhs.sticker == rhs.sticker
+        lhs.sticker == rhs.sticker &&
+        lhs.videoNote == rhs.videoNote
     }
 
     public var id: String
@@ -294,6 +301,8 @@ public struct ReplyMessage: Codable, Identifiable, Hashable {
     public var recording: Recording?
     /// Ответ на стикер: цитата показывает его эмодзи (подпись локализует приложение).
     public var sticker: MessageSticker?
+    /// Ответ на кружок: цитата показывает круглую миниатюру и «🎥 Видеосообщение».
+    public var videoNote: MessageVideoNote?
 
     public init(id: String,
                 user: User,
@@ -301,7 +310,8 @@ public struct ReplyMessage: Codable, Identifiable, Hashable {
                 text: String = "",
                 attachments: [Attachment] = [],
                 recording: Recording? = nil,
-                sticker: MessageSticker? = nil) {
+                sticker: MessageSticker? = nil,
+                videoNote: MessageVideoNote? = nil) {
 
         self.id = id
         self.user = user
@@ -310,17 +320,20 @@ public struct ReplyMessage: Codable, Identifiable, Hashable {
         self.attachments = attachments
         self.recording = recording
         self.sticker = sticker
+        self.videoNote = videoNote
     }
 
     func toMessage() -> Message {
-        Message(id: id, user: user, createdAt: createdAt, text: text, attachments: attachments, recording: recording, sticker: sticker)
+        Message(id: id, user: user, createdAt: createdAt, text: text, attachments: attachments, recording: recording, sticker: sticker, videoNote: videoNote)
     }
 }
 
 public extension Message {
 
     func toReplyMessage() -> ReplyMessage {
-        ReplyMessage(id: id, user: user, createdAt: createdAt, text: text, attachments: attachments, recording: recording, sticker: sticker)
+        ReplyMessage(id: id, user: user, createdAt: createdAt, text: text, attachments: attachments, recording: recording, sticker: sticker, videoNote: videoNote.map {
+            MessageVideoNote(fileId: $0.fileId, durationMs: $0.durationMs)
+        })
     }
 }
 

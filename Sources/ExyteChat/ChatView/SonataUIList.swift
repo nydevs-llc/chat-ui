@@ -63,6 +63,8 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
     var reactionTap: ((Message, String) -> Void)?
     /// Рендер стикеров/больших эмодзи; кладётся в окружение каждой ячейки.
     var stickerRendering: ChatStickerRendering?
+    /// Рендер кружков; кладётся в окружение каждой ячейки.
+    var videoNoteRendering: ChatVideoNoteRendering?
 
     func makeUIView(context: Context) -> UICollectionView {
         let layout = UIListLayout.makeLayout(
@@ -124,6 +126,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
         // кладём отдельно, иначе ячейки звали бы замыкание из первого рендера.
         context.coordinator.reactionTap = reactionTap
         context.coordinator.stickerRendering = stickerRendering
+        context.coordinator.videoNoteRendering = videoNoteRendering
         // Данные не изменились — списку нечего делать.
         //
         // `apply(sections:)` на каждой перерисовке SwiftUI гонял диффинг и мог
@@ -212,6 +215,8 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
 
         var reactionTap: ((Message, String) -> Void)?
         var stickerRendering: ChatStickerRendering?
+        var videoNoteRendering: ChatVideoNoteRendering?
+        private var voicePlayRequestToken: NSObjectProtocol?
 
         private var invertT: CGAffineTransform {
             outer.type == .conversation ? CGAffineTransform(scaleX: 1, y: -1) : .identity
@@ -231,6 +236,23 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
             self.showDateHeaders = showDateHeaders
             self.readTracker = readTracker
             self.scrollToMessageOnAppear = scrollToMessageOnAppear
+            super.init()
+            // Последовательное воспроизведение (кружки → голосовое): приложение
+            // просит общий плеер ленты сыграть запись.
+            voicePlayRequestToken = NotificationCenter.default.addObserver(
+                forName: .chatVoicePlayRequest,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let recording = notification.object as? Recording else { return }
+                self?.voicePlayer.startPlaying(recording)
+            }
+        }
+
+        deinit {
+            if let voicePlayRequestToken {
+                NotificationCenter.default.removeObserver(voicePlayRequestToken)
+            }
         }
 
         func attach(to cv: UICollectionView) {
@@ -274,6 +296,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
                     .sharedVoicePlayer(self.voicePlayer)
                     .environment(\.messageReactionTap, self.reactionTap)
                     .environment(\.chatStickerRendering, self.stickerRendering)
+                    .environment(\.chatVideoNoteRendering, self.videoNoteRendering)
 
                 if #available(iOS 16.0, *) {
                     cell.contentConfiguration = UIHostingConfiguration { hostedView }

@@ -91,6 +91,8 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
     var reactions: MessageReactionsConfiguration?
     /// Стикеры и большие эмодзи (рендер содержимого и тапы — у приложения).
     var stickerRendering: ChatStickerRendering?
+    /// Кружки (плеер и бейджи — у приложения, раскладка — форк).
+    var videoNoteRendering: ChatVideoNoteRendering?
 
     /// Совместимость с API exyte: делегат заворачивается в `MessageReactionsConfiguration`.
     /// Только запись — хранится конфигурация, а не делегат.
@@ -470,7 +472,8 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
                     config.onEvent(message, .resolve(emoji, on: message, source: .chip))
                 }
             },
-            stickerRendering: stickerRendering
+            stickerRendering: stickerRendering,
+            videoNoteRendering: videoNoteRendering
 //            listSwipeActions: listSwipeActions
         )
         .applyIf(!isScrollEnabled) {
@@ -483,6 +486,8 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
             if let row = viewModel.messageMenuRow {
                 messageMenu(row)
                     .onAppear(perform: showMessageMenu)
+                    .onAppear { videoNoteRendering?.onMenuVisibilityChange(row.message, true) }
+                    .onDisappear { videoNoteRendering?.onMenuVisibilityChange(row.message, false) }
             }
             
         }
@@ -576,6 +581,7 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
                 tapDocumentClosure: tapDocumentClosure,
                 groupUsers: groupUsers)
             .environment(\.chatStickerRendering, stickerRendering)
+            .environment(\.chatVideoNoteRendering, videoNoteRendering)
             .onTapGesture {
                 hideMessageMenu()
             }
@@ -806,6 +812,14 @@ public extension ChatView {
     func stickerRendering(_ configuration: ChatStickerRendering?) -> ChatView {
         var view = self
         view.stickerRendering = configuration
+        return view
+    }
+
+    /// Кружки без пузыря (контракт кружков OURS). Без конфигурации кружок
+    /// рисуется нейтральным кругом с длительностью.
+    func videoNoteRendering(_ configuration: ChatVideoNoteRendering?) -> ChatView {
+        var view = self
+        view.videoNoteRendering = configuration
         return view
     }
 
