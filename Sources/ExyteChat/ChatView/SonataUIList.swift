@@ -65,6 +65,8 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
     var stickerRendering: ChatStickerRendering?
     /// Рендер кружков; кладётся в окружение каждой ячейки.
     var videoNoteRendering: ChatVideoNoteRendering?
+    /// Подвал под сообщением; кладётся в окружение каждой ячейки.
+    var messageFooterBuilder: MessageFooterBuilder?
 
     func makeUIView(context: Context) -> UICollectionView {
         let layout = UIListLayout.makeLayout(
@@ -134,6 +136,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
         context.coordinator.reactionTap = reactionTap
         context.coordinator.stickerRendering = stickerRendering
         context.coordinator.videoNoteRendering = videoNoteRendering
+        context.coordinator.messageFooterBuilder = messageFooterBuilder
         // Данные не изменились — списку нечего делать.
         //
         // `apply(sections:)` на каждой перерисовке SwiftUI гонял диффинг и мог
@@ -226,6 +229,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
         private var voicePlayRequestToken: NSObjectProtocol?
         /// Подписки `makeUIView` (`.onScrollToBottom`, `.onScrollToMessage`).
         var notificationTokens: [NSObjectProtocol] = []
+        var messageFooterBuilder: MessageFooterBuilder?
 
         private var invertT: CGAffineTransform {
             outer.type == .conversation ? CGAffineTransform(scaleX: 1, y: -1) : .identity
@@ -313,6 +317,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
                     .environment(\.messageReactionTap, self.reactionTap)
                     .environment(\.chatStickerRendering, self.stickerRendering)
                     .environment(\.chatVideoNoteRendering, self.videoNoteRendering)
+                    .environment(\.chatMessageFooterBuilder, self.messageFooterBuilder)
 
                 if #available(iOS 16.0, *) {
                     cell.contentConfiguration = UIHostingConfiguration { hostedView }

@@ -13,6 +13,7 @@ struct MessageView: View {
     @Environment(\.chatTheme) private var theme
     @Environment(\.chatStickerRendering) private var stickerRendering
     @Environment(\.chatVideoNoteRendering) private var videoNoteRendering
+    @Environment(\.chatMessageFooterBuilder) private var footerBuilder
 
     /// Не `@ObservedObject`: ячейка только вызывает действия и пишет
     /// `messageFrame`, а не читает опубликованное состояние. Наблюдение
@@ -214,6 +215,14 @@ struct MessageView: View {
                 }
                 
                 bubbleView(message)
+
+                // Подвал (`Message.footer`) — под любым видом сообщения, со
+                // стороны отправителя. В меню сообщения не дублируется: там
+                // показывается только сам пузырь.
+                if !isDisplayingMessageMenu, let footer = message.footer, let footerBuilder {
+                    footerBuilder(message, footer)
+                        .padding(.top, 2)
+                }
             }
         }
         .padding(.top, topPadding)
