@@ -366,8 +366,17 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
     private var floatingMainView: some View {
         GeometryReader { proxy in
             ZStack(alignment: .bottom) {
+                // Лента всегда во весь экран, и под клавиатурой тоже: место под
+                // панель ввода и клавиатуру задаёт только её `contentInset`
+                // (`proxy.safeAreaInsets.bottom` при открытой клавиатуре — это
+                // высота клавиатуры). Раньше лента игнорировала лишь `.container`:
+                // SwiftUI укорачивал её до верха клавиатуры И отступ прибавлял ту же
+                // высоту ещё раз — сообщения улетали вверх, над полем оставалась
+                // пустота. А рамка ленты, меняясь анимацией SwiftUI, при мгновенной
+                // смене отступа подбрасывала сообщения на каждом показе клавиатуры
+                // и панели стикеров (Лев 17.10, C2 «реплики летают»).
                 listWithButton(bottomInset: floatingBarHeight + proxy.safeAreaInsets.bottom)
-                    .ignoresSafeArea(.container, edges: .bottom)
+                    .ignoresSafeArea(.all, edges: .bottom)
 
                 VStack(spacing: 0) {
                     if let builder = betweenListAndInputViewBuilder {

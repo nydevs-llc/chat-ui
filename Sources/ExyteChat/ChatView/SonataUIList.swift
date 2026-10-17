@@ -130,7 +130,25 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
 
     func updateUIView(_ cv: UICollectionView, context: Context) {
         cv.isScrollEnabled = isScrollEnabled
-        applyBottomInset(to: cv)
+        // Отступ меняется вместе с панелью ввода и клавиатурой. Внутри анимации
+        // клавиатуры (UIKit-блок, `inheritedAnimationDuration > 0`) хватает
+        // простого присваивания. Всё остальное — рост панели ввода, панель
+        // стикеров — приходит сюда без анимации (высота панели едет через
+        // preference, транзакция `withAnimation` до неё не доживает), и отступ
+        // прыгал мгновенно, пока сама панель ехала: сообщения подлетали и
+        // падали обратно (Лев 17.10, C2). Поэтому такие смены анимируем кривой
+        // клавиатуры (UIKit curve 7) — той же, какой едет клавиатура.
+        if UIView.inheritedAnimationDuration == 0, cv.window != nil, needsBottomInsetChange(cv) {
+            UIView.animate(
+                withDuration: 0.25,
+                delay: 0,
+                options: [.beginFromCurrentState, .allowUserInteraction, UIView.AnimationOptions(rawValue: 7 << 16)]
+            ) {
+                applyBottomInset(to: cv)
+            }
+        } else {
+            applyBottomInset(to: cv)
+        }
         // Координатор держит копию `outer` со времени создания — свежий обработчик
         // кладём отдельно, иначе ячейки звали бы замыкание из первого рендера.
         context.coordinator.reactionTap = reactionTap
@@ -156,6 +174,11 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
 
     /// Меняет отступ, не сбивая позицию: если лента стояла у последнего сообщения,
     /// она там и остаётся (панель выросла — сообщения поднимаются вместе с ней).
+    private func needsBottomInsetChange(_ cv: UICollectionView) -> Bool {
+        let current = type == .conversation ? cv.contentInset.top : cv.contentInset.bottom
+        return abs(current - bottomContentInset) > 0.5
+    }
+
     private func applyBottomInset(to cv: UICollectionView) {
         let flipped = type == .conversation
         let current = flipped ? cv.contentInset.top : cv.contentInset.bottom
