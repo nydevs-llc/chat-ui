@@ -232,6 +232,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
         let voicePlayer = RecordingPlayer()
 
         private var dataSource: UICollectionViewDiffableDataSource<SectionID, ItemID>!
+        private let swipeToReply = SwipeToReplyController()
 
         private let outer: SonataUIList
         private let mainHeaderBuilder: (() -> AnyView)?
@@ -302,6 +303,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
             self.collectionView = cv
             configureDataSource(for: cv)
             configureLongPress(on: cv)
+            configureSwipeToReply(on: cv)
 //            cv.prefetchDataSource = self
         }
 
@@ -469,6 +471,26 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
                 }
             }
             if stayPinned { scrollToBottom(animated: true) }
+        }
+
+        /// Свайп влево — ответ (`SwipeToReplyController`). Та же доступность, что у
+        /// пункта «Ответить» меню: не в залоченном чате, не у удалённых/служебных.
+        private func configureSwipeToReply(on cv: UICollectionView) {
+            swipeToReply.targetAt = { [weak self] indexPath in
+                guard let self,
+                      self.outer.showMessageMenuOnLongPress,
+                      self.outer.viewModel.messageMenuRow == nil,
+                      let itemID = self.dataSource.itemIdentifier(for: indexPath),
+                      let coords = self.rowIndexByItemID[itemID] else { return nil }
+                let message = self.lastSections[coords.s].rows[coords.r].message
+                guard !message.isDeleted, message.type != .status, message.type != .call else { return nil }
+                if let note = message.videoNote, note.isRemoved, !message.user.isCurrentUser { return nil }
+                let viewModel = self.outer.viewModel
+                return SwipeToReplyController.Target(isOutgoing: message.user.isCurrentUser) {
+                    viewModel.messageMenuActionInternal(message: message, action: .reply)
+                }
+            }
+            swipeToReply.attach(to: cv)
         }
 
         private func configureLongPress(on cv: UICollectionView) {
