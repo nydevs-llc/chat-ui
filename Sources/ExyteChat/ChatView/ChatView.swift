@@ -142,6 +142,9 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
     var showMessageMenuOnLongPress: Bool = true
     var showNetworkConnectionProblem: Bool = false
     var messageMenuAnimationDuration: Double = 0.3
+    /// Отступ кнопки «вниз» от правого края и от верха панели ввода.
+    var scrollToBottomButtonTrailing: CGFloat = 8
+    var scrollToBottomButtonBottom: CGFloat = 8
     var tapAvatarClosure: TapAvatarClosure?
     var tapDocumentClosure: TapDocumentClosure?
     var documentSelectionClosure: DocumentSelectionClosure?
@@ -433,10 +436,14 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
                             .frame(width: 40, height: 40)
                             .circleBackground(theme.colors.friendMessage)
                     }
-                    .padding(8)
-                    .padding(.bottom, bottomInset)
+                    .padding(.trailing, scrollToBottomButtonTrailing)
+                    .padding(.bottom, bottomInset + scrollToBottomButtonBottom)
+                    // Telegram: кнопка «вспухает» из 0.2 с проявлением, пружина 0.3 с
+                    // (`MESSAGE_ANIMATIONS_SPEC.md`, A15). Раньше — рывком.
+                    .transition(.scale(scale: 0.2).combined(with: .opacity))
                 }
             }
+            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isScrolledToBottom)
 
         case .comments:
             list(bottomInset: bottomInset)
@@ -811,6 +818,16 @@ public extension ChatView {
     /// This value is more akin to 'how snappy' the message menu feels
     /// - Note: Good values are between 0.15 - 0.5 (defaults to 0.3)
     /// - Important: This value is clamped between 0.1 and 1.0
+    /// Положение кнопки «вниз»: правый отступ и зазор над панелью ввода. Приложение
+    /// ставит кнопку в колонку своей кнопки отправки (Telegram), форк сам этого знать
+    /// не может — раньше кнопка висела на 8 pt от края и «съезжала» с колонки микрофона.
+    func scrollToBottomButton(trailing: CGFloat, bottom: CGFloat) -> ChatView {
+        var view = self
+        view.scrollToBottomButtonTrailing = trailing
+        view.scrollToBottomButtonBottom = bottom
+        return view
+    }
+
     func messageMenuAnimationDuration(_ duration:Double) -> ChatView {
         var view = self
         view.messageMenuAnimationDuration = max(0.1, min(1.0, duration))

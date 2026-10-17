@@ -17,6 +17,10 @@ final class ChatViewModel: ObservableObject {
     /// The messages frame that is currently being rendered in the Message Menu
     /// - Note: Used to further refine a messages frame (instead of using the cell boundary), mainly used for positioning reactions
     @Published var messageFrame: CGRect = .zero
+
+    /// Меню открыто долгим нажатием — копия пузыря в меню стартует сжатой
+    /// (`MessagePress`) и пружиной возвращается к 1. Сбрасывает само меню.
+    var messageMenuOpensFromPress = false
     
     /// Provides a mechanism to issue haptic feedback to the user
     /// - Note: Used when launching the MessageMenu

@@ -198,3 +198,49 @@ private struct StreamingCursorView: View {
 //        MessageTextView(text: "Hello world!", messageUseMarkdown: false, inbound: true, anyLinkColor: .blue, darkLinkColor: .blue)
 //    }
 //}
+
+/// Многострочный текст шириной по самой длинной строке, а не по всей предложенной
+/// ширине.
+///
+/// SwiftUI `Text` при переносе занимает ВСЮ предложенную ширину, хотя самая длинная
+/// строка короче: справа в пузыре оставалась пустая полоса, тем шире, чем раньше
+/// перенос (эмодзи широкие и переносят слово раньше — отсюда «баг длины сообщений с
+/// эмодзи», Лев 17.10, A7). Telegram подгоняет пузырь под текст. Однострочный текст и
+/// так узкий — его не трогаем. На iOS 15 (нет `Layout`) — как раньше.
+struct TightTextWidth<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        if #available(iOS 16.0, *) {
+            TightTextWidthLayout { content }
+        } else {
+            content
+        }
+    }
+}
+
+@available(iOS 16.0, *)
+private struct TightTextWidthLayout: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let text = subviews.first else { return .zero }
+        let full = text.sizeThatFits(proposal)
+        guard let width = proposal.width, width.isFinite, width > 0,
+              full.width >= width - 0.5 else { return full }
+        // Самая узкая ширина с тем же числом строк (высота монотонна по ширине).
+        var narrow: CGFloat = 0
+        var wide = width
+        while wide - narrow > 0.5 {
+            let mid = (narrow + wide) / 2
+            let height = text.sizeThatFits(ProposedViewSize(width: mid, height: nil)).height
+            if height > full.height + 0.5 { narrow = mid } else { wide = mid }
+        }
+        return CGSize(width: min(width, ceil(wide)), height: full.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(
+            at: bounds.origin,
+            proposal: ProposedViewSize(width: bounds.width, height: bounds.height)
+        )
+    }
+}

@@ -111,6 +111,9 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
     
     /// This flag is used to adjust the dismiss animation
     @State private var didReact: Bool = false
+    /// «Вдавленность» копии пузыря: при открытии долгим нажатием копия встаёт
+    /// поверх сжатого оригинала (1) и пружиной разжимается (0) — как в Telegram.
+    @State private var pressProgress: CGFloat = 0
     /// Пилюля раскрыта в полную сетку эмоджи (меню действий в это время спрятано).
     @State private var reactionsExpanded: Bool = false
     /// Выбор отдаётся приложению сразу, а не после анимации закрытия: как у Telegram,
@@ -224,6 +227,8 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
             reactionSelectionIsVisible = shouldShowReactionSelectionView
             menuIsVisible = true
             verticalOffset = UIScreen.main.bounds.height * 2
+            pressProgress = viewModel.messageMenuOpensFromPress ? 1 : 0
+            viewModel.messageMenuOpensFromPress = false
             
         case .original:
             /// Our views were rendered transparently in the `.prepare` state allowing us to
@@ -284,6 +289,9 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
             messageMenuOpacity = 1.0
             withAnimation(ContextMenuStyle.backdropAnimation) {
                 backgroundOpacity = 1.0
+            }
+            withAnimation(ContextMenuStyle.appearSpring) {
+                pressProgress = 0
             }
             
         case .ready:
@@ -503,6 +511,7 @@ struct MessageMenu<MainButton: View, ActionEnum: MessageMenuAction>: View {
     private func messageBubbleContainer() -> some View {
         // Your message bubble (non-interactive clone)
         let bubble = mainButton()
+            .environment(\.messagePressProgress, pressProgress)
             .frame(maxWidth: chatViewFrame.width - UIApplication.safeArea.leading - UIApplication.safeArea.trailing)
             .offset(x: (alignment == .right) ? UIApplication.safeArea.trailing : -UIApplication.safeArea.leading)
             .allowsHitTesting(false)

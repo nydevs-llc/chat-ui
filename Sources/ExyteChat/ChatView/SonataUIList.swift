@@ -138,7 +138,10 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
         // прыгал мгновенно, пока сама панель ехала: сообщения подлетали и
         // падали обратно (Лев 17.10, C2). Поэтому такие смены анимируем кривой
         // клавиатуры (UIKit curve 7) — той же, какой едет клавиатура.
-        if UIView.inheritedAnimationDuration == 0, cv.window != nil, needsBottomInsetChange(cv) {
+        if context.coordinator.isAnimatingInsertion {
+            // Въезд строки сам доведёт ленту до нового низа (цель читается каждый кадр).
+            applyBottomInset(to: cv, keepPinned: false)
+        } else if UIView.inheritedAnimationDuration == 0, cv.window != nil, needsBottomInsetChange(cv) {
             UIView.animate(
                 withDuration: 0.25,
                 delay: 0,
@@ -179,13 +182,13 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
         return abs(current - bottomContentInset) > 0.5
     }
 
-    private func applyBottomInset(to cv: UICollectionView) {
+    private func applyBottomInset(to cv: UICollectionView, keepPinned: Bool = true) {
         let flipped = type == .conversation
         let current = flipped ? cv.contentInset.top : cv.contentInset.bottom
         guard abs(current - bottomContentInset) > 0.5 else { return }
 
         if flipped {
-            let wasAtBottom = cv.contentOffset.y <= -current + 1
+            let wasAtBottom = keepPinned && cv.contentOffset.y <= -current + 1
             cv.contentInset.top = bottomContentInset
             cv.verticalScrollIndicatorInsets.top = bottomContentInset
             if wasAtBottom {
@@ -209,7 +212,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
     }
 
     @MainActor
-    final class Coordinator: NSObject, UICollectionViewDelegate, UICollectionViewDataSourcePrefetching {
+    final class Coordinator: NSObject, UICollectionViewDelegate, UICollectionViewDataSourcePrefetching, UIGestureRecognizerDelegate {
 
         struct SectionID: Hashable { let raw: Int }
         struct ItemID: Hashable { let raw: String }
@@ -233,6 +236,11 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
 
         private var dataSource: UICollectionViewDiffableDataSource<SectionID, ItemID>!
         private let swipeToReply = SwipeToReplyController()
+        /// «Вдавливание» пузыря при долгом нажатии (`MessagePress`).
+        let pressTracker = MessagePressTracker()
+        private var pressCommit: DispatchWorkItem?
+        private var pressStartPoint: CGPoint = .zero
+        private var pressedRow: MessageRow?
 
         private let outer: SonataUIList
         private let mainHeaderBuilder: (() -> AnyView)?
@@ -337,12 +345,16 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
                 // Плеер отдаём ВНУТРИ замыкания: содержимое
                 // `UIHostingConfiguration` — новый корень SwiftUI-дерева, и
                 // окружение списка оно не наследует.
-                let hostedView = messageView
-                    .sharedVoicePlayer(self.voicePlayer)
-                    .environment(\.messageReactionTap, self.reactionTap)
-                    .environment(\.chatStickerRendering, self.stickerRendering)
-                    .environment(\.chatVideoNoteRendering, self.videoNoteRendering)
-                    .environment(\.chatMessageFooterBuilder, self.messageFooterBuilder)
+                let hostedView = MessagePressHost(
+                    tracker: self.pressTracker,
+                    id: row.id,
+                    content: messageView
+                        .sharedVoicePlayer(self.voicePlayer)
+                        .environment(\.messageReactionTap, self.reactionTap)
+                        .environment(\.chatStickerRendering, self.stickerRendering)
+                        .environment(\.chatVideoNoteRendering, self.videoNoteRendering)
+                        .environment(\.chatMessageFooterBuilder, self.messageFooterBuilder)
+                )
 
                 if #available(iOS 16.0, *) {
                     cell.contentConfiguration = UIHostingConfiguration { hostedView }
@@ -459,8 +471,20 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
                 }
             }
 
-            let stayPinned = isAtBottom()
-            dataSource.apply(snapshot, animatingDifferences: stayPinned) {
+            // Вставка как в Telegram (Лев 17.10, A13 «скачет оффсет»): раньше diffable
+            // анимировал вставку фейдом со строкой ОЦЕНОЧНОЙ высоты (44 pt), а
+            // параллельно шёл `scrollToBottom(animated:)` своей кривой — строка
+            // появлялась, затем самоподгонялась до настоящей высоты, и вся колонка
+            // прыгала. Теперь снапшот применяется без анимации, раскладка считается
+            // сразу (высоты финальные), и позиция ленты корректируется по якорю:
+            // - у низа — колонка вместе с новой строкой въезжает снизу одной
+            //   пружиной `ChatMotion.listDuration` (A2);
+            // - в истории — видимый текст остаётся на месте (A3).
+            let anchor = visibleAnchor()
+            let isAnimating = offsetAnimator.isRunning
+            let wasPinned = isAtBottom() || isAnimating
+            let previousIDs = Set(oldByID.keys)
+            dataSource.apply(snapshot, animatingDifferences: false) {
                 // Perform initial scroll to unread message after layout completes
                 if !self.hasPerformedInitialScroll, let messageId = self.scrollToMessageOnAppear {
                     self.hasPerformedInitialScroll = true
@@ -470,7 +494,61 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
                     }
                 }
             }
-            if stayPinned { scrollToBottom(animated: true) }
+            guard let anchor, outer.type == .conversation else {
+                if wasPinned { scrollToBottom(animated: false) }
+                return
+            }
+            cv.layoutIfNeeded()
+            guard let path = dataSource.indexPath(for: anchor.id),
+                  let frame = cv.layoutAttributesForItem(at: path)?.frame else {
+                if wasPinned { scrollToBottom(animated: false) }
+                return
+            }
+            let shift = frame.minY - anchor.minY
+            if wasPinned {
+                if shift > 0.5 {
+                    // Колонка остаётся, где была, и одной пружиной уезжает вверх
+                    // (вставка посреди идущей анимации продолжает её с текущего места).
+                    cv.contentOffset.y += shift
+                    fadeInInsertedCells(in: cv, previousIDs: previousIDs)
+                    offsetAnimator.animate(cv) { [weak cv] in -(cv?.adjustedContentInset.top ?? 0) }
+                } else if !isAnimating {
+                    cv.contentOffset.y = -cv.adjustedContentInset.top
+                }
+            } else if abs(shift) > 0.5 {
+                cv.contentOffset.y += shift
+            }
+        }
+
+        /// Идёт въезд вставленной строки: лента считается прижатой к низу.
+        var isAnimatingInsertion: Bool { offsetAnimator.isRunning }
+
+        /// Аниматор смещения ленты (вставка у низа).
+        private let offsetAnimator = ListOffsetAnimator()
+
+        /// Видимая строка, по которой держится позиция ленты при обновлении:
+        /// ближайшая к визуальному низу (в перевёрнутой ленте — с меньшим `minY`).
+        private func visibleAnchor() -> (id: ItemID, minY: CGFloat)? {
+            guard let cv = collectionView else { return nil }
+            let visible = cv.indexPathsForVisibleItems.compactMap { path -> (ItemID, CGFloat)? in
+                guard let id = dataSource.itemIdentifier(for: path),
+                      let frame = cv.layoutAttributesForItem(at: path)?.frame else { return nil }
+                return (id, frame.minY)
+            }
+            return visible.min { $0.1 < $1.1 }.map { (id: $0.0, minY: $0.1) }
+        }
+
+        /// Новые строки проявляются за 0.2 с, пока колонка въезжает.
+        private func fadeInInsertedCells(in cv: UICollectionView, previousIDs: Set<String>) {
+            for path in cv.indexPathsForVisibleItems {
+                guard let id = dataSource.itemIdentifier(for: path),
+                      !previousIDs.contains(id.raw),
+                      let cell = cv.cellForItem(at: path) else { continue }
+                cell.contentView.alpha = 0
+                UIView.animate(withDuration: 0.2, delay: 0, options: [.allowUserInteraction, .curveEaseOut]) {
+                    cell.contentView.alpha = 1
+                }
+            }
         }
 
         /// Свайп влево — ответ (`SwipeToReplyController`). Та же доступность, что у
@@ -493,24 +571,43 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
             swipeToReply.attach(to: cv)
         }
 
+        /// Долгое нажатие как в Telegram (`MESSAGE_ANIMATIONS_SPEC.md`, A19): через
+        /// 0.12 с пузырь 0.2 с «вдавливается», на конце — вибрация и меню, которое
+        /// стартует со сжатого пузыря. Раньше было 0.35 с покоя и сразу меню (Лев 17.10,
+        /// A15 «нет прожатия»).
         private func configureLongPress(on cv: UICollectionView) {
             let lp = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
-            lp.minimumPressDuration = 0.35
-            lp.allowableMovement = 12
+            lp.minimumPressDuration = MessagePress.delay
+            lp.allowableMovement = MessagePress.cancelDistance
             lp.cancelsTouchesInView = false
             lp.delaysTouchesBegan = true
+            lp.delegate = self
             cv.addGestureRecognizer(lp)
         }
 
         @objc private func handleLongPress(_ gr: UILongPressGestureRecognizer) {
-            guard gr.state == .began,
-                  let cv = collectionView,
-                  outer.showMessageMenuOnLongPress
-            else { return }
+            guard let cv = collectionView else { return }
+            switch gr.state {
+            case .began:
+                beginPress(at: gr.location(in: cv), in: cv)
+            case .changed:
+                // Палец поехал или пошёл скролл — это не нажатие на пузырь.
+                let point = gr.location(in: cv)
+                let moved = hypot(point.x - pressStartPoint.x, point.y - pressStartPoint.y)
+                if pressCommit != nil, moved > MessagePress.cancelDistance || cv.isDragging {
+                    cancelPress()
+                }
+            default:
+                // Отпустили до меню — пузырь разжимается.
+                if pressCommit != nil { cancelPress() }
+            }
+        }
 
-            if cv.isDragging || cv.isDecelerating { return }
-            let point = gr.location(in: cv)
-            guard let indexPath = cv.indexPathForItem(at: point),
+        private func beginPress(at point: CGPoint, in cv: UICollectionView) {
+            guard outer.showMessageMenuOnLongPress,
+                  !cv.isDragging, !cv.isDecelerating,
+                  cv.convert(point, to: nil).x > MessagePress.leftEdgeInset,
+                  let indexPath = cv.indexPathForItem(at: point),
                   let itemID = dataSource.itemIdentifier(for: indexPath),
                   let coords = rowIndexByItemID[itemID]
             else { return }
@@ -520,15 +617,61 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
             guard outer.viewModel.messageMenuRow == nil,
                   !msg.isDeleted, msg.type != .status, msg.type != .call else { return }
 
-            let gen = UIImpactFeedbackGenerator(style: .medium)
-            gen.impactOccurred(intensity: 1.0)
+            pressStartPoint = point
+            pressedRow = row
+            pressTracker.press(row.id)
+            let commit = DispatchWorkItem { [weak self] in self?.commitPress() }
+            pressCommit = commit
+            DispatchQueue.main.asyncAfter(deadline: .now() + MessagePress.duration, execute: commit)
+        }
+
+        private func commitPress() {
+            pressCommit = nil
+            guard let row = pressedRow, outer.viewModel.messageMenuRow == nil else {
+                cancelPress()
+                return
+            }
+            pressedRow = nil
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred(intensity: 1.0)
+            // Скролл тем же пальцем после открытия меню не продолжается.
+            if let pan = collectionView?.panGestureRecognizer {
+                pan.isEnabled = false
+                pan.isEnabled = true
+            }
+            outer.viewModel.messageMenuOpensFromPress = true
             outer.viewModel.messageMenuRow = row
+            // Копия в меню встаёт поверх сжатого оригинала и разжимается той же
+            // пружиной: оригинал под ней разжимается синхронно и не выглядывает.
+            pressTracker.release(ContextMenuStyle.appearSpring.delay(0.1))
+        }
+
+        private func cancelPress() {
+            pressCommit?.cancel()
+            pressCommit = nil
+            pressedRow = nil
+            pressTracker.release()
+        }
+
+        func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+            // Палец главнее анимации вставки.
+            offsetAnimator.stop()
         }
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
             let atBottom: Bool
             if outer.type == .conversation {
-                atBottom = scrollView.contentOffset.y <= -scrollView.adjustedContentInset.top + 0.5
+                // Кнопка «вниз» (A15 спеки анимаций, Telegram): появляется, когда до
+                // низа ≥ 40 pt, прячется ближе 20 pt. Раньше порог был 0.5 pt — кнопка
+                // мигала от любого сдвига, включая въезд новой строки и смену отступа
+                // под панель ввода. Пока вставка везёт ленту к низу — лента «внизу».
+                let distance = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+                if offsetAnimator.isRunning {
+                    atBottom = true
+                } else if outer.isScrolledToBottom {
+                    atBottom = distance < ScrollToBottomButtonThreshold.show
+                } else {
+                    atBottom = distance <= ScrollToBottomButtonThreshold.hide
+                }
             } else {
                 let maxY = max(0, scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom)
                 atBottom = scrollView.contentOffset.y >= maxY - 0.5
@@ -546,6 +689,8 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
 
         func scrollToBottom(animated: Bool) {
             guard let cv = collectionView else { return }
+            // Вставка уже везёт ленту к низу своей пружиной.
+            if offsetAnimator.isRunning { return }
             if outer.type == .conversation {
                 let y = -cv.adjustedContentInset.top
                 cv.setContentOffset(CGPoint(x: 0, y: y), animated: animated)
@@ -627,6 +772,15 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
             if let readTracker = readTracker {
                 readTracker.messageDidDisappear(messageId: row.message.id)
             }
+        }
+
+        /// Нажатие идёт вместе со скроллом: начался скролл — нажатие отменяется
+        /// (`handleLongPress`, `.changed`), а не блокирует ленту.
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
         }
 
         func collectionView(_ collectionView: UICollectionView,
@@ -757,4 +911,87 @@ private extension UIEdgeInsets {
     var withoutVerticalInsets: UIEdgeInsets {
         UIEdgeInsets(top: 0, left: left, bottom: 0, right: right)
     }
+}
+
+/// Плавный сдвиг `contentOffset` ленты по кадрам дисплея.
+///
+/// Не `UIView.animate`: анимация `bounds` у `UICollectionView` раскладывает ячейки
+/// сразу под конечную позицию, и строки, видимые только в середине пути, не
+/// рисуются. Здесь смещение ставится каждый кадр — лента раскладывается как при
+/// обычном скролле. Кривая — критически демпфированная пружина без перелёта
+/// (Telegram: `listSpring`, 0.4 с; `MESSAGE_ANIMATIONS_SPEC.md` §1.1, A2).
+@MainActor
+final class ListOffsetAnimator: NSObject {
+    /// Длительность вставки (Telegram `ListView`: 0.4 с).
+    static let duration: CFTimeInterval = 0.4
+    /// ω пружины: к концу `duration` пройдено 99% пути.
+    private static let omega: Double = 16.6
+
+    private var link: CADisplayLink?
+    private weak var scrollView: UIScrollView?
+    private var startY: CGFloat = 0
+    /// Цель читается каждый кадр: отступ под панель ввода может смениться прямо
+    /// во время въезда (поле очистилось после отправки), и лента обязана
+    /// закончить точно у низа, а не у старого отступа.
+    private var target: () -> CGFloat = { 0 }
+    /// Время анимации копится по кадрам, а не берётся с часов: первый кадр после
+    /// вставки тяжёлый (новая ячейка, первый кадр стикера), и по часам лента
+    /// перескакивала бы сразу на треть пути. Шаг не больше 1/30 с — после
+    /// подвисания движение продолжается с места, а не прыгает (замер: −58 pt за кадр).
+    private var elapsed: CFTimeInterval = 0
+    private var lastTimestamp: CFTimeInterval?
+
+    var isRunning: Bool { link != nil }
+
+    func animate(_ scrollView: UIScrollView, to target: @escaping () -> CGFloat) {
+        stop()
+        guard !UIAccessibility.isReduceMotionEnabled else {
+            scrollView.contentOffset.y = target()
+            return
+        }
+        self.scrollView = scrollView
+        startY = scrollView.contentOffset.y
+        self.target = target
+        elapsed = 0
+        lastTimestamp = nil
+        let link = CADisplayLink(target: self, selector: #selector(step(_:)))
+        if #available(iOS 15.0, *) {
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+        }
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+
+    func stop() {
+        link?.invalidate()
+        link = nil
+    }
+
+    private static func curve(_ t: CFTimeInterval) -> Double {
+        let x = omega * t
+        return 1 - (1 + x) * exp(-x)
+    }
+
+    @objc private func step(_ link: CADisplayLink) {
+        guard let scrollView else { stop(); return }
+        if let lastTimestamp {
+            elapsed += min(link.timestamp - lastTimestamp, 1.0 / 30.0)
+        }
+        lastTimestamp = link.timestamp
+        let t = elapsed
+        let targetY = target()
+        if t >= Self.duration {
+            scrollView.contentOffset.y = targetY
+            stop()
+            return
+        }
+        let progress = Self.curve(t) / Self.curve(Self.duration)
+        scrollView.contentOffset.y = startY + (targetY - startY) * CGFloat(progress)
+    }
+}
+
+/// Пороги кнопки «вниз» (Telegram: показ с 40 pt от низа; гистерезис, чтобы не мигала).
+enum ScrollToBottomButtonThreshold {
+    static let show: CGFloat = 40
+    static let hide: CGFloat = 20
 }

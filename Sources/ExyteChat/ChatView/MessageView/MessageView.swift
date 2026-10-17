@@ -54,6 +54,15 @@ struct MessageView: View {
     static let statusViewSize: CGFloat = 14
     static let horizontalStatusPadding: CGFloat = 8
     static let horizontalBubblePadding: CGFloat = 70
+    /// Поля текста в пузыре по вертикали. Было 8 — Telegram ставит 6 (+ пиксель);
+    /// 7 сохраняет наш кегль 17 читаемым и снимает «везде много места» (Лев 17.10, A11).
+    static let textBubbleVerticalPadding: CGFloat = 7
+    /// Зазор между пузырями одного автора подряд. Telegram — вплотную (≈2 pt с
+    /// учётом полей картинки пузыря); было 4.
+    static let groupedMessageSpacing: CGFloat = 2
+    /// Зазор при смене автора. Telegram ≈ 2.3 pt + поля картинки пузыря (≈5 pt
+    /// видимых); было 8, наши пузыри без хвостов — берём 6.
+    static let messageGroupSpacing: CGFloat = 6
 
     // Композиция «ответ на публикацию-цитату» (макет)
     //
@@ -192,7 +201,9 @@ struct MessageView: View {
 
     var topPadding: CGFloat {
         if chatType == .comments { return 0 }
-        return positionInUserGroup.isTop && !positionInMessagesSection.isTop ? 8 : 4
+        return positionInUserGroup.isTop && !positionInMessagesSection.isTop
+            ? MessageView.messageGroupSpacing
+            : MessageView.groupedMessageSpacing
     }
 
     var bottomPadding: CGFloat {
@@ -215,6 +226,8 @@ struct MessageView: View {
                 }
                 
                 bubbleView(message)
+                    // Долгое нажатие «вдавливает» пузырь вокруг его центра (A19).
+                    .modifier(MessagePressShrink())
 
                 // Подвал (`Message.footer`) — под любым видом сообщения, со
                 // стороны отправителя. В меню сообщения не дублируется: там
@@ -926,30 +939,44 @@ struct MessageView: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
+    /// В строке текста есть что показать справа: галочки своего сообщения или
+    /// время удалённого. Время у живых сообщений не рисуется с `72dea53`, и у
+    /// входящих слот оставался пустым, но `HStack` всё равно отдавал ему 12 pt —
+    /// справа в пузыре висела пустота (Лев 17.10, A7).
+    private func hasInlineMeta(_ message: Message) -> Bool {
+        guard showMessageTimeView else { return false }
+        if message.isDeleted { return true }
+        return message.user.isCurrentUser && message.status != nil
+    }
+
     @ViewBuilder
     private func plainTextWithTimeView(_ message: Message) -> some View {
-        HStack(alignment: .lastTextBaseline, spacing: 12) {
-            MessageTextView(
-                text: message.text,
-                messageUseMarkdown: messageUseMarkdown,
-                inbound: !message.user.isCurrentUser,
-                anyLinkColor: theme.colors.anyLink,
-                darkLinkColor: theme.colors.darkLink,
-                isDeleted: message.isDeleted,
-                isStreaming: message.isStreaming,
-                onMentionTap: { id in
-                    if let user = groupUsers.first(where: { $0.id.components(separatedBy: "@").first == id }) {
-                        tapAvatarClosure?(user, message.id)
+        HStack(alignment: .lastTextBaseline, spacing: hasInlineMeta(message) ? 12 : 0) {
+            TightTextWidth {
+                MessageTextView(
+                    text: message.text,
+                    messageUseMarkdown: messageUseMarkdown,
+                    inbound: !message.user.isCurrentUser,
+                    anyLinkColor: theme.colors.anyLink,
+                    darkLinkColor: theme.colors.darkLink,
+                    isDeleted: message.isDeleted,
+                    isStreaming: message.isStreaming,
+                    onMentionTap: { id in
+                        if let user = groupUsers.first(where: { $0.id.components(separatedBy: "@").first == id }) {
+                            tapAvatarClosure?(user, message.id)
+                        }
                     }
-                }
-            )
-            .fixedSize(horizontal: false, vertical: true)
+                )
+                .fixedSize(horizontal: false, vertical: true)
+            }
 
-            messageTimeView()
-                .baselineNudgeDown(6)
+            if hasInlineMeta(message) {
+                messageTimeView()
+                    .baselineNudgeDown(6)
+            }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, MessageView.textBubbleVerticalPadding)
     }
 
     @ViewBuilder
