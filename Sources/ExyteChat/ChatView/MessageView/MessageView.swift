@@ -863,21 +863,49 @@ struct MessageView: View {
     @ViewBuilder
     func textWithTimeView(_ message: Message) -> some View {
         if showsInlineReactions(message) {
-            // Telegram: текст, под ним одна строка — чипы слева, время справа.
-            VStack(alignment: .leading, spacing: 6) {
-                messageTextView(message)
-                HStack(alignment: .bottom, spacing: 12) {
-                    ReactionChipsRow(message: message, isOutgoingBubble: message.user.isCurrentUser)
-                    Spacer(minLength: 0)
-                    messageTimeView()
+            // Telegram: короткий текст, чипы и время помещаются в одну строку —
+            // пузырь не растёт; не помещаются — чипы и время отдельной строкой
+            // под текстом (Лев 17.10, C3). iOS 15 — всегда отдельной строкой.
+            if #available(iOS 16.0, *), !message.text.contains("\n") {
+                ViewThatFits(in: .horizontal) {
+                    reactionsOnTextLine(message)
+                    reactionsUnderText(message)
                 }
+            } else {
+                reactionsUnderText(message)
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
-            .padding(.bottom, 6)
         } else {
             plainTextWithTimeView(message)
         }
+    }
+
+    /// Текст, чипы и время одной строкой — только если строка помещается целиком.
+    private func reactionsOnTextLine(_ message: Message) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            messageTextView(message)
+                .fixedSize()
+            ReactionChipsRow(message: message, isOutgoingBubble: message.user.isCurrentUser)
+                .fixedSize()
+            messageTimeView()
+                .fixedSize()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+    }
+
+    /// Текст, под ним одна строка — чипы слева, время справа.
+    private func reactionsUnderText(_ message: Message) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            messageTextView(message)
+            HStack(alignment: .bottom, spacing: 12) {
+                ReactionChipsRow(message: message, isOutgoingBubble: message.user.isCurrentUser)
+                Spacer(minLength: 0)
+                messageTimeView()
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
     }
 
     private func messageTextView(_ message: Message) -> some View {
