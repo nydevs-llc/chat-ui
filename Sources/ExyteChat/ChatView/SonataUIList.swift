@@ -241,6 +241,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
         private var pressCommit: DispatchWorkItem?
         private var pressStartPoint: CGPoint = .zero
         private var pressedRow: MessageRow?
+        private let keyboardDismiss = KeyboardDismissController()
 
         private let outer: SonataUIList
         private let mainHeaderBuilder: (() -> AnyView)?
@@ -312,6 +313,7 @@ struct SonataUIList<MessageContent: View, InputView: View>: UIViewRepresentable 
             configureDataSource(for: cv)
             configureLongPress(on: cv)
             configureSwipeToReply(on: cv)
+            keyboardDismiss.attach(to: cv)
 //            cv.prefetchDataSource = self
         }
 
