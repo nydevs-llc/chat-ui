@@ -217,9 +217,6 @@ extension EnvironmentValues {
 /// счётчик. Чип со своей реакцией залит акцентом. Тап переключает свою реакцию этим эмоджи.
 /// Порядок — порядок первых появлений в `message.reactions` (сервер отдаёт по времени).
 struct ReactionChipsRow: View {
-    @Environment(\.chatTheme) private var theme
-    @Environment(\.messageReactionTap) private var onTap
-
     let message: Message
     /// На исходящем пузыре (заливка цветом бренда) акцент — белый.
     let isOutgoingBubble: Bool
@@ -250,7 +247,27 @@ struct ReactionChipsRow: View {
         }
     }
 
-    private var chips: [Chip] { Self.chips(for: message.reactions) }
+    var body: some View {
+        HStack(spacing: 4) {
+            ReactionChipItems(message: message, isOutgoingBubble: isOutgoingBubble)
+        }
+        .animation(.interpolatingSpring(stiffness: 900, damping: 60), value: ReactionChipsRow.chips(for: message.reactions))
+    }
+}
+
+/// Сами чипы — НЕСКОЛЬКО вью (тело — `ForEach`), без своего контейнера. Так их
+/// раскладывает любой контейнер: `HStack` в `ReactionChipsRow` или переносящая
+/// раскладка пузыря (`ReactionsFooterLayout`), где каждый чип — отдельный элемент.
+struct ReactionChipItems: View {
+    typealias Chip = ReactionChipsRow.Chip
+
+    @Environment(\.chatTheme) private var theme
+    @Environment(\.messageReactionTap) private var onTap
+
+    let message: Message
+    let isOutgoingBubble: Bool
+
+    private var chips: [Chip] { ReactionChipsRow.chips(for: message.reactions) }
 
     /// Telegram показывает лица, пока реакций мало; дальше — числа.
     private var showsAvatars: Bool {
@@ -261,20 +278,17 @@ struct ReactionChipsRow: View {
     private var accent: Color { isOutgoingBubble ? .white : theme.colors.myMessage }
 
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(chips) { chip in
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    onTap?(message, chip.emoji)
-                } label: {
-                    chipLabel(chip)
-                }
-                .buttonStyle(.plain)
-                .disabled(onTap == nil)
-                .transition(.scale(scale: 0.4).combined(with: .opacity))
+        ForEach(chips) { chip in
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                onTap?(message, chip.emoji)
+            } label: {
+                chipLabel(chip)
             }
+            .buttonStyle(.plain)
+            .disabled(onTap == nil)
+            .transition(.scale(scale: 0.4).combined(with: .opacity))
         }
-        .animation(.interpolatingSpring(stiffness: 900, damping: 60), value: chips)
     }
 
     private func chipLabel(_ chip: Chip) -> some View {

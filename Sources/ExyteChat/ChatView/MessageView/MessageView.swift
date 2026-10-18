@@ -876,49 +876,48 @@ struct MessageView: View {
     @ViewBuilder
     func textWithTimeView(_ message: Message) -> some View {
         if showsInlineReactions(message) {
-            // Telegram: короткий текст, чипы и время помещаются в одну строку —
-            // пузырь не растёт; не помещаются — чипы и время отдельной строкой
-            // под текстом (Лев 17.10, C3). iOS 15 — всегда отдельной строкой.
-            if #available(iOS 16.0, *), !message.text.contains("\n") {
-                ViewThatFits(in: .horizontal) {
-                    reactionsOnTextLine(message)
-                    reactionsUnderText(message)
-                }
-            } else {
-                reactionsUnderText(message)
-            }
+            reactionsUnderText(message)
         } else {
             plainTextWithTimeView(message)
         }
     }
 
-    /// Текст, чипы и время одной строкой — только если строка помещается целиком.
-    private func reactionsOnTextLine(_ message: Message) -> some View {
-        HStack(alignment: .center, spacing: 8) {
-            messageTextView(message)
-                .fixedSize()
-            ReactionChipsRow(message: message, isOutgoingBubble: message.user.isCurrentUser)
-                .fixedSize()
-            messageTimeView()
-                .fixedSize()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+    /// Telegram (Лев 17.10, C3v2): с реакциями — ВСЕГДА две зоны, даже у текста в
+    /// одну строку. Строка 1 — текст; строка 2 — чипы слева, время/статус справа
+    /// на той же строке. Чипы не влезают — переносятся, время встаёт в конец
+    /// последней строки чипов (или своей строкой, если и там не влезает).
+    /// Ширина пузыря — max(ширина текста, ширина строк чипов со временем), без
+    /// растяжения на всю ячейку и без отдельной третьей строки под время.
+    /// Отступы: сверху 7 (как у пузыря без реакций), текст→чипы 6, снизу 6.
+    private func reactionsUnderText(_ message: Message) -> some View {
+        reactionsFooterContent(message)
+            .padding(.horizontal, MessageView.horizontalTextPadding)
+            .padding(.top, MessageView.textBubbleVerticalPadding)
+            .padding(.bottom, ReactionsFooterMetrics.bottomInset)
     }
 
-    /// Текст, под ним одна строка — чипы слева, время справа.
-    private func reactionsUnderText(_ message: Message) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            messageTextView(message)
-            HStack(alignment: .bottom, spacing: 12) {
-                ReactionChipsRow(message: message, isOutgoingBubble: message.user.isCurrentUser)
-                Spacer(minLength: 0)
-                messageTimeView()
+    @ViewBuilder
+    private func reactionsFooterContent(_ message: Message) -> some View {
+        if #available(iOS 16.0, *) {
+            ReactionsFooterLayout {
+                TightTextWidth { messageTextView(message) }
+                ReactionChipItems(message: message, isOutgoingBubble: message.user.isCurrentUser)
+                ZStack { messageTimeView() }
+            }
+            .animation(
+                .interpolatingSpring(stiffness: 900, damping: 60),
+                value: ReactionChipsRow.chips(for: message.reactions)
+            )
+        } else {
+            // iOS 15: без переносов — чипы и время одной строкой под текстом.
+            VStack(alignment: .leading, spacing: ReactionsFooterMetrics.textToChipsSpacing) {
+                messageTextView(message)
+                HStack(alignment: .center, spacing: ReactionsFooterMetrics.timeSpacing) {
+                    ReactionChipsRow(message: message, isOutgoingBubble: message.user.isCurrentUser)
+                    messageTimeView()
+                }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
     }
 
     private func messageTextView(_ message: Message) -> some View {
