@@ -133,6 +133,8 @@ final class InputViewModel: ObservableObject {
         case .recordAudioTap:
             state = recorder.isAllowedToRecordAudio ? .isRecordingTap : .waitingForRecordingPermission
             recordAudio()
+        case .prepareRecordAudio:
+            recorder.prepareSession()
         case .recordAudioHold:
             state = recorder.isAllowedToRecordAudio ? .isRecordingHold : .waitingForRecordingPermission
             recordAudio()

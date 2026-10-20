@@ -91,6 +91,10 @@ struct MessageRow: Equatable {
         // гасла, пока ячейку не передёрнут скроллом. Стикер — по той же причине.
         && lhs.message.videoNote == rhs.message.videoNote
         && lhs.message.sticker == rhs.message.sticker
+        // Подвал (чип «Unknown» под последним исходящим). Он переезжает на
+        // новое сообщение, и без этой строки у прежнего ячейка не
+        // перерисовывалась — чип копился под каждым отправленным (Лев 20.10).
+        && lhs.message.footer == rhs.message.footer
     }
 }
 

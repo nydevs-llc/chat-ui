@@ -58,6 +58,34 @@ final class Recorder {
         audioRecorder?.isRecording ?? false
     }
 
+    /// Последовательная очередь работы с аудиосессией: прогрев с касания и
+    /// старт записи не должны переключать её наперегонки.
+    private static let sessionQueue = DispatchQueue(label: "exytechat.recorder.session", qos: .userInitiated)
+
+    /// Прогрев на касание кнопки микрофона — до порога удержания. Смена
+    /// категории и активация сессии занимают сотни миллисекунд (особенно
+    /// после `.playback` прослушивания); раньше они шли синхронно на главном
+    /// потоке уже ПОСЛЕ порога, и запись заметно запаздывала (Лев 20.10).
+    /// Если записи так и не будет, сессия остаётся в `.record` — ровно то же
+    /// состояние, что после обычной записи: `stopRecording()` её не гасит, а
+    /// плеер сам переключает категорию перед воспроизведением.
+    func prepareSession() {
+        guard !isRecording, isAllowedToRecordAudio else { return }
+        let session = audioSession
+        Self.sessionQueue.async {
+            try? Self.activateRecordSession(session)
+        }
+    }
+
+    /// Категория — только если она ещё не `.record`: повторная установка той
+    /// же категории не бесплатна, а после прогрева она уже нужная.
+    private static func activateRecordSession(_ session: AVAudioSession) throws {
+        if session.category != .record || session.mode != .default {
+            try session.setCategory(.record, mode: .default)
+        }
+        try session.setActive(true)
+    }
+
     func startRecording(durationProgressHandler: @escaping ProgressHandler) async -> URL? {
         if !isAllowedToRecordAudio {
             let granted = await audioSession.requestRecordPermission()
@@ -83,10 +111,11 @@ final class Recorder {
         m4aRecordingUrl = recordingUrl
 
         do {
-            // Дефект 2, п.2 (P10 follow-up): выставляется БЕЗУСЛОВНО на каждый
-            // старт записи, а не только если категория «ещё не та» — сессия
-            // после прослушивания голосового будет `.playback` (вход выключен),
-            // и полагаться, что кто-то её уже вернул, нельзя.
+            // Дефект 2, п.2 (P10 follow-up): проверяется на КАЖДЫЙ старт
+            // записи — сессия после прослушивания голосового будет `.playback`
+            // (вход выключен), и полагаться, что кто-то её уже вернул, нельзя.
+            // Сравнение с текущей категорией лишь пропускает повторную
+            // установку той же самой (после прогрева с касания).
             //
             // `.record`, а не `.playAndRecord`: запись голосового в чате не
             // проигрывает звук одновременно с захватом — `.playAndRecord`
@@ -97,8 +126,8 @@ final class Recorder {
             // `RecordingPlayer.play()` синхронно зовёт `activatePlaybackSession()`
             // и сам переключает категорию перед стартом — именно ради этого
             // случая, см. комментарий там же.
-            try audioSession.setCategory(.record, mode: .default)
-            try audioSession.setActive(true)
+            let session = audioSession
+            try Self.sessionQueue.sync { try Self.activateRecordSession(session) }
             let recorder = try AVAudioRecorder(url: recordingUrl, settings: settings)
             audioRecorder = recorder
             recorder.isMeteringEnabled = true

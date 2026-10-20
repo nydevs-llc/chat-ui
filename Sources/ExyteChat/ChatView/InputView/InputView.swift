@@ -28,6 +28,11 @@ public enum InputViewAction {
     case camera
     case send
 
+    /// Палец лёг на кнопку микрофона: заранее переключить аудиосессию на
+    /// запись, пока не истёк порог удержания. Иначе переключение (сотни мс
+    /// после прослушивания голосового) начиналось только после порога, и
+    /// запись стартовала с заметной задержкой (Лев 20.10).
+    case prepareRecordAudio
     case recordAudioHold
     case recordAudioTap
     case recordAudioLock
