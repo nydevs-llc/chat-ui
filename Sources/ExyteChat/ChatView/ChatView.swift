@@ -425,25 +425,31 @@ public struct ChatView<MessageContent: View, InputViewContent: View, MenuAction:
     func listWithButton(bottomInset: CGFloat) -> some View {
         switch type {
         case .conversation:
-            ZStack(alignment: .bottomTrailing) {
-                list(bottomInset: bottomInset)
-
-                if !isScrolledToBottom {
-                    Button {
-                        NotificationCenter.default.post(name: .onScrollToBottom, object: nil)
-                    } label: {
-                        theme.images.scrollToBottom
-                            .frame(width: 40, height: 40)
-                            .circleBackground(theme.colors.friendMessage)
+            // Кнопка «вниз» — overlay ленты, а не её сосед в ZStack: сосед участвует
+            // в размере. Высота кнопки с отступом (40 + панель ввода + клавиатура)
+            // при открытой клавиатуре больше места над ней, а размер считается до
+            // `ignoresSafeArea`, то есть без области под клавиатурой. ZStack
+            // вырастал за `GeometryReader`, тот прижимает содержимое к верху — и
+            // панель ввода уезжала под клавиатуру на эту разницу: с цитатой ответа
+            // или правки поле ввода пропадало целиком (Лев 16.11).
+            list(bottomInset: bottomInset)
+                .overlay(alignment: .bottomTrailing) {
+                    if !isScrolledToBottom {
+                        Button {
+                            NotificationCenter.default.post(name: .onScrollToBottom, object: nil)
+                        } label: {
+                            theme.images.scrollToBottom
+                                .frame(width: 40, height: 40)
+                                .circleBackground(theme.colors.friendMessage)
+                        }
+                        .padding(.trailing, scrollToBottomButtonTrailing)
+                        .padding(.bottom, bottomInset + scrollToBottomButtonBottom)
+                        // Telegram: кнопка «вспухает» из 0.2 с проявлением, пружина 0.3 с
+                        // (`MESSAGE_ANIMATIONS_SPEC.md`, A15). Раньше — рывком.
+                        .transition(.scale(scale: 0.2).combined(with: .opacity))
                     }
-                    .padding(.trailing, scrollToBottomButtonTrailing)
-                    .padding(.bottom, bottomInset + scrollToBottomButtonBottom)
-                    // Telegram: кнопка «вспухает» из 0.2 с проявлением, пружина 0.3 с
-                    // (`MESSAGE_ANIMATIONS_SPEC.md`, A15). Раньше — рывком.
-                    .transition(.scale(scale: 0.2).combined(with: .opacity))
                 }
-            }
-            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isScrolledToBottom)
+                .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isScrolledToBottom)
 
         case .comments:
             list(bottomInset: bottomInset)
