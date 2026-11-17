@@ -1290,7 +1290,7 @@ private extension View {
 
 // MARK: - Telegram-style reply quote
 
-/// Цитата внутри пузыря: акцентная полоска, автор, одна строка текста.
+/// Цитата внутри пузыря: акцентная полоска, автор, до двух строк текста.
 /// Тап — прокрутка к исходному сообщению (`.onScrollToMessage`, тот же механизм,
 /// что у программного `ChatView.scrollToMessage`).
 struct ReplyQuoteView: View {
@@ -1339,10 +1339,14 @@ struct ReplyQuoteView: View {
                             .foregroundColor(accent)
                             .lineLimit(1)
                     }
+                    // Текст цитаты — до двух строк с многоточием в конце; у кружка
+                    // подпись короткая («Видеосообщение 0:12»), ей хватает одной.
                     Text(reply.videoNote.map { "\(preview) \(MessageVideoNote.formatDuration(seconds: $0.durationMs / 1000))" } ?? preview)
                         .font(.system(size: 13))
                         .foregroundColor(isOutgoing ? Color.white.opacity(0.85) : Color.primary.opacity(0.8))
-                        .lineLimit(1)
+                        .lineLimit(reply.videoNote == nil ? 2 : 1)
+                        .truncationMode(.tail)
+                        .multilineTextAlignment(.leading)
                 }
                 Spacer(minLength: 0)
             }

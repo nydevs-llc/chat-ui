@@ -368,9 +368,11 @@ struct InputView: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.gray)
                     if !message.text.isEmpty {
+                        // Как в цитате пузыря: до двух строк, хвост — многоточием.
                         textView(message.text)
                             .font(.system(size: 14))
-                            .lineLimit(1)
+                            .lineLimit(2)
+                            .truncationMode(.tail)
                             .foregroundColor(.black)
                     }
                 }
